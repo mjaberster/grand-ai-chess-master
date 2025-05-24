@@ -38,21 +38,21 @@ const ChessSquare = ({
       {pieceSymbol && (
         <span 
           className={`
-            select-none drop-shadow-lg
+            select-none text-5xl font-bold
             ${piece?.color === 'white' 
-              ? 'text-slate-100 filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]' 
-              : 'text-slate-800 filter drop-shadow-[0_2px_4px_rgba(255,255,255,0.3)]'
+              ? 'text-white filter drop-shadow-[0_3px_6px_rgba(0,0,0,0.8)]' 
+              : 'text-slate-900 filter drop-shadow-[0_2px_4px_rgba(255,255,255,0.5)]'
             }
           `}
+          style={{
+            textShadow: piece?.color === 'white' 
+              ? '2px 2px 4px rgba(0,0,0,0.8), -1px -1px 2px rgba(0,0,0,0.5)' 
+              : '1px 1px 2px rgba(255,255,255,0.5), -1px -1px 1px rgba(0,0,0,0.3)'
+          }}
         >
           {pieceSymbol}
         </span>
       )}
-      
-      {/* Position label for development */}
-      <span className="absolute bottom-0 right-0 text-xs opacity-30 text-slate-600">
-        {position}
-      </span>
     </div>
   );
 };

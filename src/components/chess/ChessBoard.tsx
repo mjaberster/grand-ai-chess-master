@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -106,12 +105,29 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
     if (!piece) return '';
     
     const symbols = {
-      white: { king: '♔', queen: '♕', rook: '♖', bishop: '♗', knight: '♘', pawn: '♙' },
-      black: { king: '♚', queen: '♛', rook: '♜', bishop: '♝', knight: '♞', pawn: '♟' }
+      white: { 
+        king: '♔', 
+        queen: '♕', 
+        rook: '♖', 
+        bishop: '♗', 
+        knight: '♘', 
+        pawn: '♙' 
+      },
+      black: { 
+        king: '♚', 
+        queen: '♛', 
+        rook: '♜', 
+        bishop: '♝', 
+        knight: '♞', 
+        pawn: '♟' 
+      }
     };
     
     return symbols[piece.color][piece.type];
   };
+
+  const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+  const ranks = ['8', '7', '6', '5', '4', '3', '2', '1'];
 
   return (
     <div className="min-h-screen p-4">
@@ -147,26 +163,74 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
           {/* Chess Board */}
           <div className="lg:col-span-3">
             <Card className="bg-slate-800/50 border-slate-700 backdrop-blur-sm p-6">
-              <div className="grid grid-cols-8 gap-0 aspect-square max-w-2xl mx-auto border-4 border-amber-400 rounded-lg overflow-hidden">
-                {board.map((row, rowIndex) =>
-                  row.map((piece, colIndex) => {
-                    const position = `${String.fromCharCode(97 + colIndex)}${8 - rowIndex}`;
-                    const isLight = (rowIndex + colIndex) % 2 === 0;
-                    const isSelected = selectedSquare === position;
-                    
-                    return (
-                      <ChessSquare
-                        key={position}
-                        position={position}
-                        piece={piece}
-                        isLight={isLight}
-                        isSelected={isSelected}
-                        onClick={() => handleSquareClick(rowIndex, colIndex)}
-                        pieceSymbol={getPieceSymbol(piece)}
-                      />
-                    );
-                  })
-                )}
+              <div className="max-w-2xl mx-auto">
+                {/* Board with coordinates */}
+                <div className="relative">
+                  {/* Top file labels (a-h) */}
+                  <div className="flex mb-2">
+                    <div className="w-8"></div> {/* Corner space */}
+                    {files.map(file => (
+                      <div key={file} className="flex-1 text-center text-amber-300 font-bold text-lg">
+                        {file}
+                      </div>
+                    ))}
+                    <div className="w-8"></div> {/* Corner space */}
+                  </div>
+
+                  <div className="flex">
+                    {/* Left rank labels (8-1) */}
+                    <div className="flex flex-col">
+                      {ranks.map(rank => (
+                        <div key={rank} className="h-16 w-8 flex items-center justify-center text-amber-300 font-bold text-lg">
+                          {rank}
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Chess board */}
+                    <div className="grid grid-cols-8 gap-0 aspect-square border-4 border-amber-400 rounded-lg overflow-hidden">
+                      {board.map((row, rowIndex) =>
+                        row.map((piece, colIndex) => {
+                          const position = `${String.fromCharCode(97 + colIndex)}${8 - rowIndex}`;
+                          const isLight = (rowIndex + colIndex) % 2 === 0;
+                          const isSelected = selectedSquare === position;
+                          
+                          return (
+                            <ChessSquare
+                              key={position}
+                              position={position}
+                              piece={piece}
+                              isLight={isLight}
+                              isSelected={isSelected}
+                              onClick={() => handleSquareClick(rowIndex, colIndex)}
+                              pieceSymbol={getPieceSymbol(piece)}
+                            />
+                          );
+                        })
+                      )}
+                    </div>
+
+                    {/* Right rank labels (8-1) */}
+                    <div className="flex flex-col">
+                      {ranks.map(rank => (
+                        <div key={rank} className="h-16 w-8 flex items-center justify-center text-amber-300 font-bold text-lg">
+                          {rank}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Bottom file labels (a-h) */}
+                  <div className="flex mt-2">
+                    <div className="w-8"></div> {/* Corner space */}
+                    {files.map(file => (
+                      <div key={file} className="flex-1 text-center text-amber-300 font-bold text-lg">
+                        {file}
+                      </div>
+                    ))}
+                    <div className="w-8"></div> {/* Corner space */}
+                  </div>
+                </div>
               </div>
               
               {/* Current Player Indicator */}
