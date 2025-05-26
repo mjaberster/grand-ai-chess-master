@@ -167,21 +167,19 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
                 {/* Board with coordinates */}
                 <div className="relative">
                   {/* Top file labels (a-h) */}
-                  <div className="flex mb-2">
-                    <div className="w-8"></div> {/* Corner space */}
+                  <div className="grid grid-cols-8 gap-0 mb-2 ml-8 mr-8">
                     {files.map(file => (
-                      <div key={file} className="flex-1 text-center text-amber-300 font-bold text-lg">
+                      <div key={file} className="aspect-square flex items-center justify-center text-amber-300 font-bold text-lg">
                         {file}
                       </div>
                     ))}
-                    <div className="w-8"></div> {/* Corner space */}
                   </div>
 
-                  <div className="flex">
+                  <div className="flex items-center">
                     {/* Left rank labels (8-1) */}
-                    <div className="flex flex-col">
+                    <div className="flex flex-col mr-2">
                       {ranks.map(rank => (
-                        <div key={rank} className="h-16 w-8 flex items-center justify-center text-amber-300 font-bold text-lg">
+                        <div key={rank} className="aspect-square w-8 flex items-center justify-center text-amber-300 font-bold text-lg">
                           {rank}
                         </div>
                       ))}
@@ -211,9 +209,9 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
                     </div>
 
                     {/* Right rank labels (8-1) */}
-                    <div className="flex flex-col">
+                    <div className="flex flex-col ml-2">
                       {ranks.map(rank => (
-                        <div key={rank} className="h-16 w-8 flex items-center justify-center text-amber-300 font-bold text-lg">
+                        <div key={rank} className="aspect-square w-8 flex items-center justify-center text-amber-300 font-bold text-lg">
                           {rank}
                         </div>
                       ))}
@@ -221,14 +219,12 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
                   </div>
 
                   {/* Bottom file labels (a-h) */}
-                  <div className="flex mt-2">
-                    <div className="w-8"></div> {/* Corner space */}
+                  <div className="grid grid-cols-8 gap-0 mt-2 ml-8 mr-8">
                     {files.map(file => (
-                      <div key={file} className="flex-1 text-center text-amber-300 font-bold text-lg">
+                      <div key={file} className="aspect-square flex items-center justify-center text-amber-300 font-bold text-lg">
                         {file}
                       </div>
                     ))}
-                    <div className="w-8"></div> {/* Corner space */}
                   </div>
                 </div>
               </div>
