@@ -1,15 +1,25 @@
-
 import { ChessPiece, PieceColor, Move } from '@/types/chess';
-import { getAllValidMoves } from './chessLogic';
+import { getAllLegalMoves } from './chessRuleEnforcement';
 
 export const getAIMove = async (
   board: (ChessPiece | null)[][],
   color: PieceColor,
   gameHistory: Move[]
 ): Promise<Move | null> => {
-  const validMoves = getAllValidMoves(board, color);
+  console.log('🤖 Basic AI Move Generation with Rule Enforcement');
   
-  if (validMoves.length === 0) return null;
+  const legalMoves = getAllLegalMoves(board, color);
+  
+  console.log('📊 Legal Moves Analysis:', {
+    count: legalMoves.length,
+    color,
+    gamePhase: determineGamePhase(board)
+  });
+  
+  if (legalMoves.length === 0) {
+    console.log('🏁 No legal moves available - game over');
+    return null;
+  }
   
   try {
     const boardState = boardToFEN(board);
@@ -17,47 +27,18 @@ export const getAIMove = async (
     const gamePhase = determineGamePhase(board);
     const materialBalance = calculateMaterialBalance(board);
     
-    const prompt = `You are a chess grandmaster AI with deep understanding of chess strategy, tactics, and endgames.
-
-POSITION ANALYSIS:
-- Current FEN: ${boardState}
-- Game phase: ${gamePhase}
-- Material balance: ${materialBalance > 0 ? `+${materialBalance}` : materialBalance} for ${color}
-- Move history: ${historyString || 'Opening'}
-- Available moves: ${validMoves.join(', ')}
-- Player to move: ${color}
-
-STRATEGIC GUIDELINES:
-${getStrategicGuidelines(gamePhase, color, materialBalance)}
-
-EVALUATION CRITERIA:
-1. Tactical opportunities (checks, captures, threats)
-2. Positional improvements (piece activity, king safety, pawn structure)
-3. Strategic goals based on position type
-4. Opening principles (if early game)
-5. Endgame technique (if late game)
-
-Choose the strongest move considering:
-- Immediate tactics and threats
-- Long-term positional advantages
-- King safety and piece coordination
-- Pawn structure and weak squares
-- Initiative and tempo
-
-Respond with ONLY the move in format "from-to" (e.g., "e2-e4").
-Choose the move that a grandmaster would play in this position.`;
-
-    console.log('AI analyzing position with advanced prompting:', {
+    console.log('🎯 AI Context:', {
       gamePhase,
       materialBalance,
-      validMovesCount: validMoves.length
+      legalMovesCount: legalMoves.length,
+      boardState: boardState.substring(0, 20) + '...'
     });
     
-    // For now, make an intelligent random move (replace with actual AI call)
-    const intelligentMove = selectIntelligentMove(validMoves, board, color, gamePhase);
+    // Select intelligent move from legal moves only
+    const intelligentMove = selectIntelligentMove(legalMoves, board, color, gamePhase);
     
     // Simulate AI thinking time based on position complexity
-    const thinkingTime = Math.min(3000, 1000 + validMoves.length * 100);
+    const thinkingTime = Math.min(3000, 1000 + legalMoves.length * 100);
     await new Promise(resolve => setTimeout(resolve, thinkingTime));
     
     const [from, to] = intelligentMove.split('-');
@@ -66,7 +47,16 @@ Choose the move that a grandmaster would play in this position.`;
     const [toRow, toCol] = [to.charCodeAt(0) - 97, 8 - parseInt(to[1])];
     const captured = board[toRow][toCol];
     
-    if (!piece) return null;
+    if (!piece) {
+      console.error('❌ No piece found at selected square');
+      return null;
+    }
+    
+    console.log('✅ Legal AI Move Selected:', {
+      move: intelligentMove,
+      piece: `${piece.color} ${piece.type}`,
+      captured: captured ? `${captured.color} ${captured.type}` : 'none'
+    });
     
     return {
       from,
@@ -77,10 +67,10 @@ Choose the move that a grandmaster would play in this position.`;
       notation: intelligentMove
     };
   } catch (error) {
-    console.error('AI move generation failed:', error);
+    console.error('💥 AI move generation failed:', error);
     
-    // Fallback to random move
-    const randomMove = validMoves[Math.floor(Math.random() * validMoves.length)];
+    // Fallback to random legal move
+    const randomMove = legalMoves[Math.floor(Math.random() * legalMoves.length)];
     const [from, to] = randomMove.split('-');
     
     const [fromRow, fromCol] = [from.charCodeAt(0) - 97, 8 - parseInt(from[1])];
@@ -89,6 +79,8 @@ Choose the move that a grandmaster would play in this position.`;
     const captured = board[toRow][toCol];
     
     if (!piece) return null;
+    
+    console.log('🔧 Using fallback legal move:', randomMove);
     
     return {
       from,
@@ -202,25 +194,32 @@ const getStrategicGuidelines = (phase: string, color: PieceColor, materialBalanc
 };
 
 const selectIntelligentMove = (
-  validMoves: string[],
+  legalMoves: string[],
   board: (ChessPiece | null)[][],
   color: PieceColor,
   gamePhase: string
 ): string => {
-  // Prioritize captures and checks
-  const captures = validMoves.filter(move => {
+  console.log('🧠 Selecting intelligent move from legal moves:', {
+    total: legalMoves.length,
+    gamePhase,
+    color
+  });
+
+  // Prioritize captures from legal moves
+  const captures = legalMoves.filter(move => {
     const [, to] = move.split('-');
     const [toRow, toCol] = [to.charCodeAt(0) - 97, 8 - parseInt(to[1])];
     return board[toRow][toCol] !== null;
   });
   
   if (captures.length > 0) {
+    console.log('🎯 Found capture moves:', captures.length);
     return captures[Math.floor(Math.random() * captures.length)];
   }
   
-  // In opening, prefer center moves
+  // In opening, prefer center moves from legal moves
   if (gamePhase === 'opening') {
-    const centerMoves = validMoves.filter(move => {
+    const centerMoves = legalMoves.filter(move => {
       const [, to] = move.split('-');
       const file = to.charCodeAt(0) - 97;
       const rank = parseInt(to[1]);
@@ -228,10 +227,13 @@ const selectIntelligentMove = (
     });
     
     if (centerMoves.length > 0) {
+      console.log('🏛️ Found center moves:', centerMoves.length);
       return centerMoves[Math.floor(Math.random() * centerMoves.length)];
     }
   }
   
-  // Default to random move
-  return validMoves[Math.floor(Math.random() * validMoves.length)];
+  // Default to random legal move
+  const selectedMove = legalMoves[Math.floor(Math.random() * legalMoves.length)];
+  console.log('🎲 Selected random legal move:', selectedMove);
+  return selectedMove;
 };

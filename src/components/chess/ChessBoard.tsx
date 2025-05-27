@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -7,9 +8,10 @@ import ChessSquare from './ChessSquare';
 import GameInfo from './GameInfo';
 import ChatBox from './ChatBox';
 import MoveHistory from './MoveHistory';
-import { initializeBoard, isValidMove, makeMove } from '@/utils/chessLogic';
+import { initializeBoard, makeMove } from '@/utils/chessLogic';
 import { getAIMove } from '@/utils/aiService';
 import { getOpenAIMove } from '@/utils/openaiChessService';
+import { isLegalMove, getAllLegalMoves, validateGameState } from '@/utils/chessRuleEnforcement';
 
 interface ChessBoardProps {
   gameMode: GameMode;
@@ -33,22 +35,66 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [playerColor, setPlayerColor] = useState<PieceColor>('white');
   const [aiName, setAiName] = useState<string>('');
+  const [gameOver, setGameOver] = useState(false);
+  const [winner, setWinner] = useState<PieceColor | 'draw' | null>(null);
 
   useEffect(() => {
     const timer = setInterval(() => {
-      setGameTime(prev => prev + 1);
+      if (!gameOver) {
+        setGameTime(prev => prev + 1);
+      }
     }, 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [gameOver]);
 
   useEffect(() => {
-    if (gameMode === 'ai-vs-ai' || (gameMode === 'human-vs-ai' && currentPlayer !== playerColor)) {
+    // Validate game state after each move
+    const gameValidation = validateGameState(board, currentPlayer);
+    console.log('🎮 Game State Check:', {
+      currentPlayer,
+      isInCheck: gameValidation.isInCheck,
+      isCheckmate: gameValidation.isCheckmate,
+      isStalemate: gameValidation.isStalemate,
+      gameOver: gameValidation.gameOver,
+      legalMoves: gameValidation.legalMoves.length
+    });
+
+    if (gameValidation.gameOver && !gameOver) {
+      console.log('🏁 Game Over Detected:', {
+        reason: gameValidation.isCheckmate ? 'checkmate' : 'stalemate',
+        winner: gameValidation.winner
+      });
+      
+      setGameOver(true);
+      setWinner(gameValidation.winner || null);
+      
+      const gameOverMessage = gameValidation.isCheckmate 
+        ? `Checkmate! ${gameValidation.winner === 'white' ? 'White' : 'Black'} wins!`
+        : 'Stalemate! The game is a draw.';
+      
+      const gameOverChatMessage: ChatMessage = {
+        id: Date.now().toString(),
+        sender: 'ai',
+        message: gameOverMessage,
+        timestamp: Date.now()
+      };
+      setChatMessages(prev => [...prev, gameOverChatMessage]);
+      
+      return; // Stop here if game is over
+    }
+
+    if (!gameOver && (gameMode === 'ai-vs-ai' || (gameMode === 'human-vs-ai' && currentPlayer !== playerColor))) {
       handleAIMove();
     }
-  }, [currentPlayer, gameMode, playerColor]);
+  }, [currentPlayer, gameMode, playerColor, gameOver]);
 
   const handleAIMove = async () => {
-    console.log('🤖 AI Move Handler Started:', {
+    if (gameOver) {
+      console.log('🛑 AI move cancelled - game is over');
+      return;
+    }
+
+    console.log('🤖 AI Move Handler Started with Rule Enforcement:', {
       gameMode,
       currentPlayer,
       playerColor,
@@ -61,12 +107,12 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
       let chatMessage = '';
 
       if (gameMode === 'human-vs-ai') {
-        console.log('🎯 Using Enhanced OpenAI Service');
+        console.log('🎯 Using Enhanced Rule-Enforced OpenAI Service');
         const result = await getOpenAIMove(board, currentPlayer, gameHistory, 'Player', aiName);
         aiMove = result.move;
         chatMessage = result.chatMessage;
         
-        console.log('📤 OpenAI Result:', {
+        console.log('📤 Rule-Enforced OpenAI Result:', {
           moveNotation: aiMove?.notation,
           hasMove: !!aiMove,
           chatMessage,
@@ -94,11 +140,34 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
       }
 
       if (aiMove) {
-        console.log('✅ AI Move Execution:', {
+        // Double-check that the AI move is legal before executing
+        if (!isLegalMove(board, aiMove.from, aiMove.to, currentPlayer)) {
+          console.error('🚨 AI returned illegal move:', {
+            from: aiMove.from,
+            to: aiMove.to,
+            piece: `${aiMove.piece.color} ${aiMove.piece.type}`
+          });
+          
+          // This should not happen with proper rule enforcement, but as a safety net
+          const legalMoves = getAllLegalMoves(board, currentPlayer);
+          if (legalMoves.length > 0) {
+            console.log('🔧 Using fallback legal move');
+            const fallbackMove = legalMoves[0].split('-');
+            aiMove.from = fallbackMove[0];
+            aiMove.to = fallbackMove[1];
+            aiMove.notation = legalMoves[0];
+          } else {
+            console.error('💀 No legal moves available - should have been detected earlier');
+            return;
+          }
+        }
+
+        console.log('✅ Legal AI Move Execution:', {
           from: aiMove.from,
           to: aiMove.to,
           piece: `${aiMove.piece.color} ${aiMove.piece.type}`,
-          captured: aiMove.captured ? `${aiMove.captured.color} ${aiMove.captured.type}` : 'none'
+          captured: aiMove.captured ? `${aiMove.captured.color} ${aiMove.captured.type}` : 'none',
+          legal: true
         });
         
         const newBoard = makeMove(board, aiMove.from, aiMove.to);
@@ -108,7 +177,7 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
         
         console.log('🔄 Board state updated, switching to:', currentPlayer === 'white' ? 'black' : 'white');
       } else {
-        console.error('❌ No AI move generated');
+        console.log('🏁 AI returned null move - game over scenario');
       }
     } catch (error) {
       console.error('💥 AI move failed:', {
@@ -127,7 +196,7 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
   };
 
   const handleSquareClick = (row: number, col: number) => {
-    if (gameMode === 'ai-vs-ai') return;
+    if (gameMode === 'ai-vs-ai' || gameOver) return;
     if (gameMode === 'human-vs-ai' && currentPlayer !== playerColor) return;
 
     const position = `${String.fromCharCode(97 + col)}${8 - row}`;
@@ -141,7 +210,14 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
 
       const [fromCol, fromRow] = [selectedSquare.charCodeAt(0) - 97, 8 - parseInt(selectedSquare[1])];
       
-      if (isValidMove(board, selectedSquare, position)) {
+      // Use legal move validation instead of basic valid move
+      if (isLegalMove(board, selectedSquare, position, currentPlayer)) {
+        console.log('✅ Human move is legal:', {
+          from: selectedSquare,
+          to: position,
+          player: currentPlayer
+        });
+
         const newBoard = makeMove(board, selectedSquare, position);
         const move: Move = {
           from: selectedSquare,
@@ -157,6 +233,22 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
         setCurrentPlayer(currentPlayer === 'white' ? 'black' : 'white');
         setSelectedSquare(null);
       } else {
+        console.warn('❌ Human attempted illegal move:', {
+          from: selectedSquare,
+          to: position,
+          player: currentPlayer,
+          reason: 'Would leave king in check or violate chess rules'
+        });
+
+        // Show visual feedback for illegal move attempt
+        const illegalMoveMessage: ChatMessage = {
+          id: Date.now().toString(),
+          sender: 'ai',
+          message: `Illegal move! ${selectedSquare}-${position} would leave your king in check or violate chess rules.`,
+          timestamp: Date.now()
+        };
+        setChatMessages(prev => [...prev, illegalMoveMessage]);
+
         if (piece && piece.color === currentPlayer) {
           setSelectedSquare(position);
         } else {
@@ -214,6 +306,9 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
   const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
   const ranks = ['8', '7', '6', '5', '4', '3', '2', '1'];
 
+  // Get current game state for display
+  const gameValidation = validateGameState(board, currentPlayer);
+
   return (
     <div className="min-h-screen p-4">
       <div className="max-w-7xl mx-auto">
@@ -243,6 +338,18 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
             </Button>
           </div>
         </div>
+
+        {/* Game Over Banner */}
+        {gameOver && (
+          <div className="mb-6 p-4 bg-amber-600/20 border border-amber-600 rounded-lg text-center">
+            <h2 className="text-2xl font-bold text-amber-300">
+              {winner === 'draw' ? 'Stalemate - Draw!' : `${winner === 'white' ? 'White' : 'Black'} Wins!`}
+            </h2>
+            <p className="text-amber-200 mt-2">
+              {winner === 'draw' ? 'No legal moves available but king not in check' : 'Checkmate - King captured!'}
+            </p>
+          </div>
+        )}
 
         {/* Main Game Layout - Board dominant with chat on the right */}
         <div className="flex gap-6">
@@ -314,17 +421,31 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
                 </div>
               </div>
               
-              {/* Current Player Indicator */}
+              {/* Current Player Indicator with Game State */}
               <div className="mt-6 text-center">
                 <div className={`inline-flex items-center px-6 py-3 rounded-full ${
-                  currentPlayer === 'white' 
+                  gameOver 
+                    ? 'bg-gradient-to-r from-amber-600 to-amber-700 text-white'
+                    : gameValidation.isInCheck
+                    ? 'bg-gradient-to-r from-red-600 to-red-700 text-white'
+                    : currentPlayer === 'white' 
                     ? 'bg-gradient-to-r from-slate-100 to-slate-200 text-slate-900' 
                     : 'bg-gradient-to-r from-slate-700 to-slate-800 text-white'
                 }`}>
                   <div className={`w-3 h-3 rounded-full mr-3 ${
-                    currentPlayer === 'white' ? 'bg-white border-2 border-slate-400' : 'bg-slate-900'
+                    gameOver
+                      ? 'bg-amber-300'
+                      : gameValidation.isInCheck
+                      ? 'bg-red-300'
+                      : currentPlayer === 'white' ? 'bg-white border-2 border-slate-400' : 'bg-slate-900'
                   }`} />
-                  {isThinking ? `${aiName || 'AI'} is analyzing position...` : `${currentPlayer === 'white' ? 'White' : 'Black'} to move`}
+                  {gameOver 
+                    ? `Game Over - ${winner === 'draw' ? 'Draw' : `${winner} wins`}`
+                    : gameValidation.isInCheck
+                    ? `${currentPlayer} in CHECK! Must escape!`
+                    : isThinking 
+                    ? `${aiName || 'AI'} is analyzing position...` 
+                    : `${currentPlayer === 'white' ? 'White' : 'Black'} to move`}
                 </div>
               </div>
             </Card>

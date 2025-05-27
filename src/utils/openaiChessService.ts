@@ -1,5 +1,5 @@
 import { ChessPiece, PieceColor, Move } from '@/types/chess';
-import { getAllValidMoves } from './chessLogic';
+import { getAllLegalMoves, validateGameState, isLegalMove } from './chessRuleEnforcement';
 import { generateEnhancedMovePrompt, generateRetryPrompt } from './enhancedChessPrompts';
 import { 
   generateAnalysisPrompt, 
@@ -23,103 +23,129 @@ export const getOpenAIMove = async (
   currentAiName?: string,
   retryCount: number = 0
 ): Promise<OpenAIResponse> => {
-  console.log('🤖 OpenAI Move Request Started');
+  console.log('🤖 OpenAI Move Request Started with Rule Enforcement');
   console.log('📊 Input Data:', {
     color,
     opponentName,
     currentAiName,
     gameHistoryLength: gameHistory.length,
-    retryCount,
-    boardState: board.map(row => row.map(piece => piece ? `${piece.color[0]}${piece.type[0]}` : '.')).join('')
+    retryCount
   });
 
-  const validMoves = getAllValidMoves(board, color);
-  console.log('✅ Valid Moves Generated:', {
-    count: validMoves.length,
-    moves: validMoves.length <= 10 ? validMoves : validMoves.slice(0, 10).concat([`... and ${validMoves.length - 10} more`])
+  // Use legal moves instead of basic valid moves
+  const gameValidation = validateGameState(board, color);
+  const legalMoves = gameValidation.legalMoves;
+  
+  console.log('✅ Game State Validation:', {
+    isInCheck: gameValidation.isInCheck,
+    isCheckmate: gameValidation.isCheckmate,
+    isStalemate: gameValidation.isStalemate,
+    legalMovesCount: legalMoves.length,
+    gameOver: gameValidation.gameOver
   });
   
-  if (validMoves.length === 0) {
-    console.log('❌ No valid moves available - game over');
-    return { move: null, chatMessage: 'No valid moves available - game over.' };
+  // Handle game over scenarios
+  if (gameValidation.gameOver) {
+    console.log('🏁 Game Over Detected:', {
+      checkmate: gameValidation.isCheckmate,
+      stalemate: gameValidation.isStalemate,
+      winner: gameValidation.winner
+    });
+    
+    let gameOverMessage = '';
+    if (gameValidation.isCheckmate) {
+      gameOverMessage = `Checkmate! ${gameValidation.winner === color ? 'I lose' : 'I win'}!`;
+    } else if (gameValidation.isStalemate) {
+      gameOverMessage = 'Stalemate! The game is a draw.';
+    }
+    
+    return { 
+      move: null, 
+      chatMessage: gameOverMessage,
+      aiName: currentAiName 
+    };
+  }
+  
+  if (legalMoves.length === 0) {
+    console.log('❌ No legal moves available');
+    return { 
+      move: null, 
+      chatMessage: 'No legal moves available - this should not happen!',
+      aiName: currentAiName 
+    };
   }
 
   try {
-    const prompt = generateEnhancedMovePrompt(board, color, gameHistory, validMoves, opponentName, currentAiName);
-    console.log('📝 Enhanced Prompt Generated:', {
+    const prompt = generateEnhancedMovePrompt(board, color, gameHistory, legalMoves, opponentName, currentAiName);
+    console.log('📝 Enhanced Rule-Aware Prompt Generated:', {
       promptLength: prompt.length,
-      preview: prompt.substring(0, 300) + '...'
+      checksIncluded: prompt.includes('CHECK'),
+      rulesEmphasized: prompt.includes('CRITICAL CHESS RULES')
     });
 
     const response = await callOpenAI(prompt);
     console.log('🔄 OpenAI Raw Response:', response);
 
-    // Enhanced move validation with detailed logging
+    // Enhanced move validation with legal move checking
     const moveNotation = response.move;
-    console.log('🎯 Move Validation:', {
+    console.log('🎯 Enhanced Move Validation:', {
       receivedMove: moveNotation,
-      expectedFormat: 'from-to (e.g., e2-e4)',
-      isValidFormat: typeof moveNotation === 'string' && moveNotation.includes('-'),
-      isInValidList: validMoves.includes(moveNotation)
+      isString: typeof moveNotation === 'string',
+      hasCorrectFormat: typeof moveNotation === 'string' && moveNotation.includes('-'),
+      isLegalMove: legalMoves.includes(moveNotation),
+      totalLegalMoves: legalMoves.length
     });
 
     if (!moveNotation || typeof moveNotation !== 'string') {
       console.error('❌ Invalid move format from OpenAI:', moveNotation);
       
       if (retryCount < 2) {
-        console.log('🔄 Retrying with correction prompt...');
-        return retryWithCorrection(board, color, gameHistory, validMoves, moveNotation, 'Invalid move format', opponentName, currentAiName, retryCount + 1);
+        console.log('🔄 Retrying with rule violation correction...');
+        return retryWithRuleViolation(board, color, gameHistory, legalMoves, moveNotation, 'Invalid move format - must be valid chess notation', opponentName, currentAiName, retryCount + 1);
       }
       
-      return createFallbackMove(validMoves, board, 'Invalid move format received. Using fallback move.', currentAiName);
+      return createFallbackMove(legalMoves, board, 'AI provided invalid move format. Using safe fallback move.', currentAiName);
     }
 
-    if (!validMoves.includes(moveNotation)) {
-      console.error('❌ Move not in valid moves list:', {
+    if (!legalMoves.includes(moveNotation)) {
+      console.error('❌ Move violates chess rules:', {
         receivedMove: moveNotation,
-        validMovesCount: validMoves.length,
-        isInList: validMoves.includes(moveNotation),
-        similarMoves: validMoves.filter(m => 
-          m.includes(moveNotation.split('-')[0]) || 
-          m.includes(moveNotation.split('-')[1])
-        )
+        isIllegal: !legalMoves.includes(moveNotation),
+        wouldLeaveKingInCheck: !isLegalMove(board, moveNotation.split('-')[0], moveNotation.split('-')[1], color),
+        legalAlternatives: legalMoves.slice(0, 5)
       });
       
       if (retryCount < 2) {
-        console.log('🔄 Retrying with correction prompt...');
-        return retryWithCorrection(board, color, gameHistory, validMoves, moveNotation, 'Move not in valid moves list', opponentName, currentAiName, retryCount + 1);
+        console.log('🔄 Retrying with chess rule violation correction...');
+        return retryWithRuleViolation(board, color, gameHistory, legalMoves, moveNotation, 'Move violates chess rules - would leave king in check or is otherwise illegal', opponentName, currentAiName, retryCount + 1);
       }
       
-      return createFallbackMove(validMoves, board, 'Invalid move received. Let me recalculate...', currentAiName);
+      return createFallbackMove(legalMoves, board, 'AI attempted illegal move. Chess rules enforced - using legal alternative.', currentAiName);
     }
 
     const move = createMoveFromNotation(moveNotation, board);
-    console.log('✅ Move Creation Result:', {
+    console.log('✅ Legal Move Validated and Created:', {
       notation: moveNotation,
       moveCreated: !!move,
-      moveDetails: move ? {
-        from: move.from,
-        to: move.to,
-        piece: `${move.piece.color} ${move.piece.type}`,
-        captured: move.captured ? `${move.captured.color} ${move.captured.type}` : 'none'
-      } : null
+      followsChessRules: true
     });
 
     if (!move) {
-      console.error('❌ Failed to create move object from notation:', moveNotation);
+      console.error('❌ Failed to create move object from legal notation:', moveNotation);
       
       if (retryCount < 2) {
-        console.log('🔄 Retrying with correction prompt...');
-        return retryWithCorrection(board, color, gameHistory, validMoves, moveNotation, 'Failed to create move object', opponentName, currentAiName, retryCount + 1);
+        console.log('🔄 Retrying move object creation...');
+        return retryWithRuleViolation(board, color, gameHistory, legalMoves, moveNotation, 'Failed to create move object from notation', opponentName, currentAiName, retryCount + 1);
       }
       
-      return createFallbackMove(validMoves, board, 'Move creation failed. Using fallback.', currentAiName);
+      return createFallbackMove(legalMoves, board, 'Move creation failed. Using legal fallback.', currentAiName);
     }
 
-    console.log('🎉 OpenAI Move Success:', {
+    console.log('🎉 Legal OpenAI Move Success:', {
       move: moveNotation,
       chatMessage: response.chatMessage,
-      aiName: response.aiName || currentAiName
+      aiName: response.aiName || currentAiName,
+      chesRulesEnforced: true
     });
 
     return {
@@ -128,11 +154,7 @@ export const getOpenAIMove = async (
       aiName: response.aiName || currentAiName
     };
   } catch (error) {
-    console.error('💥 OpenAI API Error:', {
-      error: error instanceof Error ? error.message : error,
-      stack: error instanceof Error ? error.stack : 'No stack trace',
-      retryCount
-    });
+    console.error('💥 OpenAI API Error:', error);
     
     if (retryCount < 1) {
       console.log('🔄 Retrying after API error...');
@@ -140,47 +162,47 @@ export const getOpenAIMove = async (
       return getOpenAIMove(board, color, gameHistory, opponentName, currentAiName, retryCount + 1);
     }
     
-    return createFallbackMove(validMoves, board, 'AI temporarily unavailable. Using fallback move.', currentAiName);
+    return createFallbackMove(legalMoves, board, 'AI temporarily unavailable. Using legal fallback move.', currentAiName);
   }
 };
 
-const retryWithCorrection = async (
+const retryWithRuleViolation = async (
   board: (ChessPiece | null)[][],
   color: PieceColor,
   gameHistory: Move[],
-  validMoves: string[],
+  legalMoves: string[],
   invalidMove: string,
   reason: string,
   opponentName: string,
   currentAiName: string | undefined,
   retryCount: number
 ): Promise<OpenAIResponse> => {
-  console.log('🔄 Retrying with correction:', { invalidMove, reason, retryCount });
+  console.log('🔄 Retrying with chess rule violation correction:', { invalidMove, reason, retryCount });
   
-  const correctionPrompt = generateRetryPrompt(invalidMove, reason, board, color, validMoves);
-  console.log('📝 Correction Prompt:', correctionPrompt.substring(0, 200) + '...');
+  const correctionPrompt = generateRetryPrompt(invalidMove, reason, board, color, legalMoves);
+  console.log('📝 Rule Violation Correction Prompt:', correctionPrompt.substring(0, 300) + '...');
   
   try {
     const response = await callOpenAI(correctionPrompt);
     const moveNotation = response.move;
     
-    if (moveNotation && validMoves.includes(moveNotation)) {
+    if (moveNotation && legalMoves.includes(moveNotation)) {
       const move = createMoveFromNotation(moveNotation, board);
       if (move) {
-        console.log('✅ Correction successful:', moveNotation);
+        console.log('✅ Rule violation correction successful:', moveNotation);
         return {
           move,
-          chatMessage: response.chatMessage || 'Corrected move selected.',
+          chatMessage: response.chatMessage || 'Corrected to legal move following chess rules.',
           aiName: currentAiName
         };
       }
     }
     
-    console.error('❌ Correction failed, using fallback');
-    return createFallbackMove(validMoves, board, 'Correction failed. Using fallback move.', currentAiName);
+    console.error('❌ Rule violation correction failed, using fallback');
+    return createFallbackMove(legalMoves, board, 'Could not correct rule violation. Using legal fallback move.', currentAiName);
   } catch (error) {
-    console.error('💥 Correction attempt failed:', error);
-    return createFallbackMove(validMoves, board, 'Error in correction. Using fallback move.', currentAiName);
+    console.error('💥 Rule violation correction attempt failed:', error);
+    return createFallbackMove(legalMoves, board, 'Error in rule correction. Using legal fallback move.', currentAiName);
   }
 };
 
@@ -258,7 +280,7 @@ const callOpenAI = async (prompt: string, expectJSON: boolean = true): Promise<a
   const apiKey = localStorage.getItem('openai_api_key');
   
   if (!apiKey) {
-    console.log('⚠️ No API key found, using simulation');
+    console.log('⚠️ No API key found, using enhanced simulation');
     return simulateOpenAICall(prompt, expectJSON);
   }
 
@@ -276,7 +298,7 @@ const callOpenAI = async (prompt: string, expectJSON: boolean = true): Promise<a
         messages: [
           {
             role: 'system',
-            content: 'You are a professional chess grandmaster AI. Always respond with valid JSON format as requested.'
+            content: 'You are a professional chess grandmaster AI that ALWAYS follows chess rules. Never suggest illegal moves. Always respond with valid JSON format as requested.'
           },
           {
             role: 'user',
@@ -310,13 +332,13 @@ const callOpenAI = async (prompt: string, expectJSON: boolean = true): Promise<a
     }
   } catch (error) {
     console.error('💥 Real OpenAI API Error:', error);
-    console.log('🔄 Falling back to simulation');
+    console.log('🔄 Falling back to enhanced simulation');
     return simulateOpenAICall(prompt, expectJSON);
   }
 };
 
 const simulateOpenAICall = async (prompt: string, expectJSON: boolean): Promise<any> => {
-  console.log('🎭 Simulating OpenAI API Call');
+  console.log('🎭 Simulating OpenAI API Call with Rule Awareness');
   
   // Simulate realistic thinking time
   const thinkingTime = 1500 + Math.random() * 2000;
@@ -325,62 +347,67 @@ const simulateOpenAICall = async (prompt: string, expectJSON: boolean): Promise<
   await new Promise(resolve => setTimeout(resolve, thinkingTime));
   
   if (expectJSON) {
-    // Extract valid moves from prompt to ensure we return a valid move
-    const validMovesMatch = prompt.match(/AVAILABLE MOVES:\s*([^\n]+)/);
-    const validMoves = validMovesMatch ? validMovesMatch[1].split(', ').filter(m => m.includes('-')) : ['e2-e4'];
+    // Extract legal moves from prompt to ensure we return a legal move
+    const legalMovesMatch = prompt.match(/LEGAL MOVES AVAILABLE:\s*([^\n]+)/);
+    const legalMoves = legalMovesMatch ? legalMovesMatch[1].split(', ').filter(m => m.includes('-')) : ['e2-e4'];
     
     // Prioritize moves based on context
-    let selectedMove = validMoves[0];
+    let selectedMove = legalMoves[0];
     
     // Check for urgent situations in prompt
-    if (prompt.includes('CHECK') || prompt.includes('THREATENED')) {
-      console.log('🚨 Detected urgent situation, selecting defensive move');
-      // In a real implementation, this would analyze the moves more intelligently
-      selectedMove = validMoves[Math.floor(Math.random() * Math.min(3, validMoves.length))];
+    if (prompt.includes('CHECK') || prompt.includes('CHECKMATE')) {
+      console.log('🚨 Detected check/mate situation, selecting escape move');
+      selectedMove = legalMoves[0]; // First move should be a legal escape
+    } else if (prompt.includes('THREATENED')) {
+      console.log('⚠️ Detected threats, selecting defensive move');
+      selectedMove = legalMoves[Math.floor(Math.random() * Math.min(3, legalMoves.length))];
     } else {
-      selectedMove = validMoves[Math.floor(Math.random() * validMoves.length)];
+      selectedMove = legalMoves[Math.floor(Math.random() * legalMoves.length)];
     }
     
     const response = {
       move: selectedMove,
       chatMessage: generateContextualChatMessage(prompt),
-      aiName: 'ChessGPT-Enhanced'
+      aiName: 'ChessGPT-RuleEnforced'
     };
     
-    console.log('📤 Simulated JSON Response:', response);
+    console.log('📤 Simulated Legal JSON Response:', response);
     return response;
   } else {
     const response = {
-      analysis: 'The position shows complex tactical and strategic elements requiring careful evaluation.',
-      explanation: 'This move addresses the current position\'s tactical requirements while maintaining strategic balance.',
-      hint: 'Focus on piece safety and coordination while looking for tactical opportunities.'
+      analysis: 'The position shows complex tactical and strategic elements requiring careful evaluation while following chess rules.',
+      explanation: 'This move addresses the current position\'s requirements while maintaining rule compliance.',
+      hint: 'Focus on legal moves that ensure king safety while looking for tactical opportunities.'
     };
     
-    console.log('📤 Simulated Text Response:', response);
+    console.log('📤 Simulated Rule-Aware Text Response:', response);
     return response;
   }
 };
 
 const generateContextualChatMessage = (prompt: string): string => {
+  if (prompt.includes('CHECKMATE')) {
+    return 'This is checkmate - the game is over!';
+  }
   if (prompt.includes('CHECK')) {
-    return 'Escaping check with the safest available move.';
+    return 'Escaping check with the only legal move available.';
   }
   if (prompt.includes('THREATENED')) {
-    return 'Addressing the threats to my pieces while maintaining position.';
+    return 'Addressing the threats while maintaining legal play.';
   }
   if (prompt.includes('Opening')) {
-    return 'Developing pieces according to opening principles.';
+    return 'Developing pieces according to opening principles and chess rules.';
   }
   if (prompt.includes('Endgame')) {
-    return 'Focusing on endgame technique and king activity.';
+    return 'Focusing on endgame technique while respecting all chess rules.';
   }
   
   const messages = [
-    'A solid positional move that improves my piece coordination.',
-    'This move maintains the balance while creating subtle pressure.',
-    'Centralizing my pieces for better control of key squares.',
-    'A strategic move that prepares for the next phase of the game.',
-    'Improving my position while keeping tactical vigilance.'
+    'A solid positional move that follows all chess rules.',
+    'This legal move maintains balance while creating pressure.',
+    'Centralizing my pieces with a rule-compliant move.',
+    'A strategic move that respects chess principles.',
+    'Improving my position while ensuring king safety.'
   ];
   
   return messages[Math.floor(Math.random() * messages.length)];
@@ -446,28 +473,28 @@ const createMoveFromNotation = (notation: string, board: (ChessPiece | null)[][]
 };
 
 const createFallbackMove = (
-  validMoves: string[],
+  legalMoves: string[],
   board: (ChessPiece | null)[][],
   message: string,
   aiName?: string
 ): OpenAIResponse => {
-  console.log('🚨 Creating Fallback Move:', {
-    validMovesCount: validMoves.length,
+  console.log('🚨 Creating Legal Fallback Move:', {
+    legalMovesCount: legalMoves.length,
     message,
     aiName
   });
   
-  const randomMove = validMoves[Math.floor(Math.random() * validMoves.length)];
-  console.log('🎲 Selected Random Move:', randomMove);
+  const randomLegalMove = legalMoves[Math.floor(Math.random() * legalMoves.length)];
+  console.log('🎲 Selected Random Legal Move:', randomLegalMove);
   
-  const move = createMoveFromNotation(randomMove, board);
+  const move = createMoveFromNotation(randomLegalMove, board);
   
   const response = {
     move,
     chatMessage: message,
-    aiName: aiName || 'ChessBot-Backup'
+    aiName: aiName || 'ChessBot-RuleEnforced'
   };
   
-  console.log('✅ Fallback Response Created:', response);
+  console.log('✅ Legal Fallback Response Created:', response);
   return response;
 };

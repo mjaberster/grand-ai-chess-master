@@ -1,7 +1,7 @@
-
 import { ChessPiece, PieceColor, Move } from '@/types/chess';
 import { generateFEN, convertToSAN, getLastMove } from './chessNotation';
 import { analyzeTacticalSituation, TacticalSituation } from './chessStateAnalysis';
+import { validateGameState, GameStateValidation } from './chessRuleEnforcement';
 
 export const generateEnhancedMovePrompt = (
   board: (ChessPiece | null)[][],
@@ -11,25 +11,46 @@ export const generateEnhancedMovePrompt = (
   opponentName: string = 'Player',
   aiName?: string
 ): string => {
-  console.log('📝 Generating Enhanced Move Prompt');
+  console.log('📝 Generating Enhanced Move Prompt with Rule Enforcement');
   
   const fen = generateFEN(board, color);
   const moveHistory = convertToSAN(gameHistory);
   const moveCount = Math.floor(gameHistory.length / 2) + 1;
   const tacticalSituation = analyzeTacticalSituation(board, color);
+  const gameValidation = validateGameState(board, color);
   const boardDescription = generateDetailedBoardDescription(board);
   const gameContext = generateGameContext(gameHistory, opponentName, aiName, color);
-  const strategicContext = generateStrategicContext(tacticalSituation, color);
+  const strategicContext = generateStrategicContext(tacticalSituation, color, gameValidation);
   
   console.log('📊 Enhanced Prompt Context:', {
     moveCount,
-    isInCheck: tacticalSituation.isInCheck,
-    threatsCount: tacticalSituation.threatenedPieces.length,
+    isInCheck: gameValidation.isInCheck,
+    isCheckmate: gameValidation.isCheckmate,
+    isStalemate: gameValidation.isStalemate,
+    legalMovesCount: gameValidation.legalMoves.length,
     validMovesCount: validMoves.length,
     urgentMovesCount: tacticalSituation.urgentMoves.length
   });
+
+  // CRITICAL: Validate that provided moves are actually legal
+  const actualLegalMoves = gameValidation.legalMoves;
+  const filteredValidMoves = validMoves.filter(move => actualLegalMoves.includes(move));
   
-  return `You are a professional chess grandmaster AI playing a serious game.
+  if (filteredValidMoves.length !== validMoves.length) {
+    console.warn('⚠️ Some provided moves are not legal:', {
+      provided: validMoves.length,
+      legal: filteredValidMoves.length,
+      illegal: validMoves.filter(move => !actualLegalMoves.includes(move))
+    });
+  }
+  
+  return `You are a professional chess grandmaster AI playing a serious chess game that MUST follow ALL chess rules.
+
+CRITICAL CHESS RULES:
+- You CANNOT make moves that leave your king in check
+- If your king IS in check, you MUST escape check immediately
+- You CANNOT capture the opponent's king (the game ends at checkmate)
+- You MUST only choose from the LEGAL moves provided
 
 GAME CONTEXT:
 ${gameContext}
@@ -37,6 +58,9 @@ ${gameContext}
 CURRENT POSITION ANALYSIS:
 Position (FEN): ${fen}
 Move ${moveCount} - ${color} to move
+
+GAME STATE VALIDATION:
+${generateGameStateDescription(gameValidation)}
 
 BOARD STATE:
 ${boardDescription}
@@ -50,26 +74,48 @@ ${strategicContext}
 MOVE HISTORY:
 ${moveHistory || 'Game just started'}
 
-AVAILABLE MOVES:
-${validMoves.join(', ')}
+LEGAL MOVES AVAILABLE:
+${filteredValidMoves.join(', ')}
 
-${tacticalSituation.isInCheck ? 'WARNING: Your king is in CHECK! You MUST escape check.' : ''}
-${tacticalSituation.isCheckmate ? 'CRITICAL: This appears to be checkmate.' : ''}
-${tacticalSituation.threatenedPieces.length > 0 ? `THREATS: ${tacticalSituation.threatenedPieces.length} of your pieces are under attack.` : ''}
+${gameValidation.isInCheck ? '🚨 CRITICAL: Your king is in CHECK! You MUST escape check immediately with one of the legal moves above.' : ''}
+${gameValidation.isCheckmate ? '💀 GAME OVER: This is checkmate - no legal moves available.' : ''}
+${gameValidation.isStalemate ? '🤝 GAME OVER: This is stalemate - no legal moves available but not in check.' : ''}
+${gameValidation.checkingPieces.length > 0 ? `⚠️ CHECKING PIECES: Your king is attacked by pieces at: ${gameValidation.checkingPieces.join(', ')}` : ''}
 
 INSTRUCTIONS:
-1. You MUST choose from the available moves list
-2. If in check, you MUST choose a move that escapes check
-3. Prioritize safety and strong positional play
-4. Consider tactical opportunities (captures, threats, checks)
-5. Explain your reasoning briefly
+1. You MUST choose EXACTLY one move from the LEGAL MOVES list above
+2. If in check, your move MUST escape check (all provided moves already satisfy this)
+3. Consider tactical opportunities while respecting chess rules
+4. Explain your move choice briefly but clearly
 
 Respond with valid JSON:
 {
   ${!aiName ? '"aiName": "Your chess AI persona name",' : ''}
-  "move": "exact_move_from_available_list",
+  "move": "exact_move_from_legal_moves_list",
   "chatMessage": "Brief explanation of your move (1-2 sentences)"
 }`;
+};
+
+const generateGameStateDescription = (validation: GameStateValidation): string => {
+  let description = '';
+  
+  if (validation.isInCheck) {
+    description += `🚨 IN CHECK: Your king is under attack!\n`;
+  }
+  
+  if (validation.isCheckmate) {
+    description += `💀 CHECKMATE: Game over - no legal moves to escape check.\n`;
+  } else if (validation.isStalemate) {
+    description += `🤝 STALEMATE: Game over - no legal moves available but not in check.\n`;
+  } else {
+    description += `✅ NORMAL PLAY: ${validation.legalMoves.length} legal moves available.\n`;
+  }
+  
+  if (validation.checkingPieces.length > 0) {
+    description += `⚔️ Attacking pieces: ${validation.checkingPieces.join(', ')}\n`;
+  }
+  
+  return description;
 };
 
 const generateDetailedBoardDescription = (board: (ChessPiece | null)[][]): string => {
@@ -156,11 +202,19 @@ const generateTacticalAnalysis = (situation: TacticalSituation): string => {
   return analysis || 'No immediate tactical concerns detected.';
 };
 
-const generateStrategicContext = (situation: TacticalSituation, color: PieceColor): string => {
+const generateStrategicContext = (
+  situation: TacticalSituation, 
+  color: PieceColor, 
+  validation: GameStateValidation
+): string => {
   let context = '';
   
-  if (situation.isInCheck) {
-    context += 'URGENT: Must escape check immediately. Consider: king moves, blocking pieces, or capturing the attacking piece.\n';
+  if (validation.isCheckmate) {
+    context += 'GAME OVER: Checkmate detected. No legal moves available.\n';
+  } else if (validation.isStalemate) {
+    context += 'GAME OVER: Stalemate detected. No legal moves available but not in check.\n';
+  } else if (validation.isInCheck) {
+    context += 'URGENT: Must escape check immediately. All provided moves are guaranteed to escape check.\n';
   } else if (situation.threatenedPieces.length > 0) {
     context += 'PRIORITY: Defend or move threatened pieces. Consider counterattack opportunities.\n';
   } else {
@@ -183,24 +237,32 @@ export const generateRetryPrompt = (
   color: PieceColor,
   validMoves: string[]
 ): string => {
+  const gameValidation = validateGameState(board, color);
   const tacticalSituation = analyzeTacticalSituation(board, color);
   
-  return `MOVE CORRECTION NEEDED:
+  return `MOVE CORRECTION NEEDED - CHESS RULE VIOLATION:
 
-Your previous move "${invalidMove}" was INVALID.
+Your previous move "${invalidMove}" was INVALID and violates chess rules.
 Reason: ${reason}
 
-CURRENT SITUATION ANALYSIS:
+CURRENT GAME STATE:
+${generateGameStateDescription(gameValidation)}
+
+TACTICAL ANALYSIS:
 ${generateTacticalAnalysis(tacticalSituation)}
 
-VALID MOVES YOU MUST CHOOSE FROM:
-${validMoves.join(', ')}
+LEGAL MOVES YOU MUST CHOOSE FROM:
+${gameValidation.legalMoves.filter(move => validMoves.includes(move)).join(', ')}
 
-${tacticalSituation.isInCheck ? 'CRITICAL: You are in CHECK and must escape immediately!' : ''}
+${gameValidation.isInCheck ? '🚨 CRITICAL: You are in CHECK and must escape immediately!' : ''}
+${gameValidation.isCheckmate ? '💀 GAME OVER: This is checkmate - no legal moves available.' : ''}
 
-Please provide a valid move from the list above in JSON format:
+IMPORTANT: The moves listed above are the ONLY legal moves that follow chess rules.
+You CANNOT make moves that would leave your king in check or violate other chess rules.
+
+Please provide a valid move from the legal moves list above in JSON format:
 {
-  "move": "exact_move_from_valid_list",
-  "chatMessage": "Corrected move explanation"
+  "move": "exact_move_from_legal_list",
+  "chatMessage": "Corrected move explanation with rule compliance"
 }`;
 };
