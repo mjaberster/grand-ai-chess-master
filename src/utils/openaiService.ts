@@ -1,6 +1,6 @@
 
 import { ChessPiece, PieceColor, Move } from '@/types/chess';
-import { getAllValidMoves } from './chessLogic';
+import { getAllValidMoves, positionToCoords } from './chessLogic';
 
 export const getOpenAIMove = async (
   board: (ChessPiece | null)[][],
@@ -71,9 +71,9 @@ Remember: Your move MUST be exactly one of the moves from the validMoves array. 
     }
     
     const [from, to] = simulatedResponse.move.split('-');
-    const [fromRow, fromCol] = [from.charCodeAt(0) - 97, 8 - parseInt(from[1])];
+    const [fromRow, fromCol] = positionToCoords(from);
     const piece = board[fromRow][fromCol];
-    const [toRow, toCol] = [to.charCodeAt(0) - 97, 8 - parseInt(to[1])];
+    const [toRow, toCol] = positionToCoords(to);
     const captured = board[toRow][toCol];
     
     if (!piece) {
@@ -102,9 +102,9 @@ Remember: Your move MUST be exactly one of the moves from the validMoves array. 
     const randomMove = validMoves[Math.floor(Math.random() * validMoves.length)];
     const [from, to] = randomMove.split('-');
     
-    const [fromRow, fromCol] = [from.charCodeAt(0) - 97, 8 - parseInt(from[1])];
+    const [fromRow, fromCol] = positionToCoords(from);
     const piece = board[fromRow][fromCol];
-    const [toRow, toCol] = [to.charCodeAt(0) - 97, 8 - parseInt(to[1])];
+    const [toRow, toCol] = positionToCoords(to);
     const captured = board[toRow][toCol];
     
     if (!piece) return { move: null, chatMessage: '' };
