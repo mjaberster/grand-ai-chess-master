@@ -1,7 +1,7 @@
 
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Bot, User, Brain, Clock } from 'lucide-react';
+import { Bot, User, Brain } from 'lucide-react';
 import { GameMode, PieceColor, Move } from '@/types/chess';
 
 interface GameInfoProps {
@@ -9,9 +9,10 @@ interface GameInfoProps {
   currentPlayer: PieceColor;
   gameHistory: Move[];
   isThinking: boolean;
+  aiName?: string;
 }
 
-const GameInfo = ({ gameMode, currentPlayer, gameHistory, isThinking }: GameInfoProps) => {
+const GameInfo = ({ gameMode, currentPlayer, gameHistory, isThinking, aiName }: GameInfoProps) => {
   return (
     <div className="space-y-6">
       {/* Game Mode */}
@@ -39,7 +40,7 @@ const GameInfo = ({ gameMode, currentPlayer, gameHistory, isThinking }: GameInfo
           {isThinking && (
             <div className="flex items-center text-amber-400">
               <Brain className="w-4 h-4 mr-2 animate-pulse" />
-              AI thinking...
+              {aiName || 'AI'} thinking...
             </div>
           )}
         </div>
@@ -60,36 +61,16 @@ const GameInfo = ({ gameMode, currentPlayer, gameHistory, isThinking }: GameInfo
         </div>
       </Card>
 
-      {/* Move History */}
-      <Card className="bg-slate-800/50 border-slate-700 backdrop-blur-sm p-4">
-        <h3 className="font-semibold text-white mb-3">Move History</h3>
-        <div className="max-h-64 overflow-y-auto space-y-1">
-          {gameHistory.length === 0 ? (
-            <p className="text-slate-400 text-sm">No moves yet</p>
-          ) : (
-            gameHistory.slice(-8).map((move, index) => (
-              <div key={index} className="flex items-center justify-between text-sm">
-                <span className="text-slate-300">
-                  {Math.floor((gameHistory.length - gameHistory.slice(-8).length + index) / 2) + 1}.
-                  {(gameHistory.length - gameHistory.slice(-8).length + index) % 2 === 0 ? '' : '..'}
-                </span>
-                <span className="text-white font-mono">{move.notation}</span>
-              </div>
-            ))
-          )}
-        </div>
-      </Card>
-
       {/* AI Info */}
       {gameMode.includes('ai') && (
         <Card className="bg-slate-800/50 border-slate-700 backdrop-blur-sm p-4">
           <h3 className="font-semibold text-white mb-3">AI Opponent</h3>
           <div className="flex items-center">
             <Bot className="w-4 h-4 mr-2 text-blue-400" />
-            <span className="text-slate-300">GPT-4o</span>
+            <span className="text-slate-300">{aiName || 'Loading...'}</span>
           </div>
           <p className="text-xs text-slate-400 mt-2">
-            Advanced AI with strategic thinking
+            Powered by GPT-4o
           </p>
         </Card>
       )}

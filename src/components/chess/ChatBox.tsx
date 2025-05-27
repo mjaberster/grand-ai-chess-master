@@ -16,9 +16,10 @@ interface ChatMessage {
 interface ChatBoxProps {
   messages: ChatMessage[];
   onSendMessage: (message: string) => void;
+  aiName?: string;
 }
 
-const ChatBox = ({ messages, onSendMessage }: ChatBoxProps) => {
+const ChatBox = ({ messages, onSendMessage, aiName }: ChatBoxProps) => {
   const [inputMessage, setInputMessage] = useState('');
 
   const handleSend = (e: React.FormEvent) => {
@@ -38,14 +39,14 @@ const ChatBox = ({ messages, onSendMessage }: ChatBoxProps) => {
       <div className="p-4">
         <div className="flex items-center mb-4">
           <MessageSquare className="w-5 h-5 mr-2 text-blue-400" />
-          <h3 className="font-semibold text-white">Game Chat</h3>
+          <h3 className="font-semibold text-white">Chat with {aiName || 'AI'}</h3>
         </div>
 
         <ScrollArea className="h-64 mb-4">
           <div className="space-y-3">
             {messages.length === 0 ? (
               <p className="text-slate-400 text-sm text-center py-8">
-                Start chatting with your AI opponent!
+                Start chatting with {aiName || 'your AI opponent'}!
               </p>
             ) : (
               messages.map((message) => (
@@ -90,7 +91,7 @@ const ChatBox = ({ messages, onSendMessage }: ChatBoxProps) => {
           <Input
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}
-            placeholder="Type your message..."
+            placeholder={`Message ${aiName || 'AI'}...`}
             className="flex-1 bg-slate-700 border-slate-600 text-white placeholder-slate-400"
           />
           <Button 

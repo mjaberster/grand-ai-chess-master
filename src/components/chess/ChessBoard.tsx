@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -6,6 +7,7 @@ import { GameMode, ChessPiece, PieceColor, Move } from '@/types/chess';
 import ChessSquare from './ChessSquare';
 import GameInfo from './GameInfo';
 import ChatBox from './ChatBox';
+import MoveHistory from './MoveHistory';
 import { initializeBoard, isValidMove, makeMove } from '@/utils/chessLogic';
 import { getAIMove } from '@/utils/aiService';
 import { getOpenAIMove } from '@/utils/openaiService';
@@ -31,6 +33,7 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
   const [gameTime, setGameTime] = useState(0);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [playerColor, setPlayerColor] = useState<PieceColor>('white');
+  const [aiName, setAiName] = useState<string>('');
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -51,11 +54,15 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
       let aiMove;
       let chatMessage = '';
 
-      // Use OpenAI for human vs AI games
       if (gameMode === 'human-vs-ai') {
-        const result = await getOpenAIMove(board, currentPlayer, gameHistory, 'Player');
+        const result = await getOpenAIMove(board, currentPlayer, gameHistory, 'Player', aiName);
         aiMove = result.move;
         chatMessage = result.chatMessage;
+        
+        // Set AI name if it's the first interaction
+        if (result.aiName && !aiName) {
+          setAiName(result.aiName);
+        }
         
         if (chatMessage) {
           const newChatMessage: ChatMessage = {
@@ -67,7 +74,6 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
           setChatMessages(prev => [...prev, newChatMessage]);
         }
       } else {
-        // Use regular AI for AI vs AI games
         aiMove = await getAIMove(board, currentPlayer, gameHistory);
       }
 
@@ -174,7 +180,7 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
 
   return (
     <div className="min-h-screen p-4">
-      <div className="max-w-7xl mx-auto">
+      <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <Button 
@@ -202,17 +208,16 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
           </div>
         </div>
 
-        <div className="grid lg:grid-cols-4 gap-6">
-          {/* Chess Board */}
-          <div className="lg:col-span-2">
+        <div className="flex flex-col lg:flex-row gap-6">
+          {/* Main Chess Board - Takes dominant space */}
+          <div className="flex-1 max-w-4xl">
             <Card className="bg-slate-800/50 border-slate-700 backdrop-blur-sm p-6">
-              <div className="max-w-2xl mx-auto">
-                {/* Board with properly aligned coordinates using CSS Grid */}
+              <div className="max-w-3xl mx-auto">
+                {/* Board with coordinates using CSS Grid */}
                 <div className="inline-block">
-                  {/* Main grid container: 10x10 (8x8 board + 2 for coordinates) */}
                   <div className="grid grid-cols-10 grid-rows-10 gap-0 aspect-square border-4 border-amber-400 rounded-lg overflow-hidden">
                     {/* Top-left corner (empty) */}
-                    <div className="flex items-center justify-center"></div>
+                    <div className="flex items-center justify-center bg-slate-900/50"></div>
                     
                     {/* Top file labels (a-h) */}
                     {files.map(file => (
@@ -222,7 +227,7 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
                     ))}
                     
                     {/* Top-right corner (empty) */}
-                    <div className="flex items-center justify-center"></div>
+                    <div className="flex items-center justify-center bg-slate-900/50"></div>
 
                     {/* Board rows with left and right rank labels */}
                     {board.map((row, rowIndex) => [
@@ -257,7 +262,7 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
                     ])}
 
                     {/* Bottom-left corner (empty) */}
-                    <div className="flex items-center justify-center"></div>
+                    <div className="flex items-center justify-center bg-slate-900/50"></div>
                     
                     {/* Bottom file labels (a-h) */}
                     {files.map(file => (
@@ -267,7 +272,7 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
                     ))}
                     
                     {/* Bottom-right corner (empty) */}
-                    <div className="flex items-center justify-center"></div>
+                    <div className="flex items-center justify-center bg-slate-900/50"></div>
                   </div>
                 </div>
               </div>
@@ -282,29 +287,35 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
                   <div className={`w-3 h-3 rounded-full mr-3 ${
                     currentPlayer === 'white' ? 'bg-white border-2 border-slate-400' : 'bg-slate-900'
                   }`} />
-                  {isThinking ? 'AI is thinking...' : `${currentPlayer === 'white' ? 'White' : 'Black'} to move`}
+                  {isThinking ? `${aiName || 'AI'} is thinking...` : `${currentPlayer === 'white' ? 'White' : 'Black'} to move`}
                 </div>
               </div>
             </Card>
           </div>
 
-          {/* Game Info and Chat */}
-          <div className="lg:col-span-2 space-y-6">
+          {/* Side Panel */}
+          <div className="w-full lg:w-80">
             <GameInfo 
               gameMode={gameMode}
               currentPlayer={currentPlayer}
               gameHistory={gameHistory}
               isThinking={isThinking}
+              aiName={aiName}
             />
-            
-            {gameMode === 'human-vs-ai' && (
-              <ChatBox 
-                messages={chatMessages}
-                onSendMessage={handleSendMessage}
-              />
-            )}
           </div>
         </div>
+
+        {/* Bottom Section - Chat and Move History */}
+        {gameMode === 'human-vs-ai' && (
+          <div className="mt-6 grid md:grid-cols-2 gap-6">
+            <ChatBox 
+              messages={chatMessages}
+              onSendMessage={handleSendMessage}
+              aiName={aiName}
+            />
+            <MoveHistory gameHistory={gameHistory} />
+          </div>
+        )}
       </div>
     </div>
   );
