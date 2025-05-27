@@ -2,6 +2,7 @@ import { ChessPiece, PieceColor, Move } from '@/types/chess';
 import { generateFEN, convertToSAN, getLastMove } from './chessNotation';
 import { analyzeTacticalSituation, TacticalSituation } from './chessStateAnalysis';
 import { validateGameState, GameStateValidation } from './chessRuleEnforcement';
+import { isPawnPromotion } from './chessLogic';
 
 export const generateEnhancedMovePrompt = (
   board: (ChessPiece | null)[][],
@@ -21,6 +22,7 @@ export const generateEnhancedMovePrompt = (
   const boardDescription = generateDetailedBoardDescription(board);
   const gameContext = generateGameContext(gameHistory, opponentName, aiName, color);
   const strategicContext = generateStrategicContext(tacticalSituation, color, gameValidation);
+  const specialMovesInfo = generateSpecialMovesInfo(board, color, validMoves);
   
   console.log('📊 Enhanced Prompt Context:', {
     moveCount,
@@ -51,6 +53,8 @@ CRITICAL CHESS RULES:
 - If your king IS in check, you MUST escape check immediately
 - You CANNOT capture the opponent's king (the game ends at checkmate)
 - You MUST only choose from the LEGAL moves provided
+- Castling is allowed when conditions are met (king and rook haven't moved, path clear, not in check)
+- Pawn promotion is mandatory when a pawn reaches the final rank
 
 GAME CONTEXT:
 ${gameContext}
@@ -71,6 +75,9 @@ ${generateTacticalAnalysis(tacticalSituation)}
 STRATEGIC CONTEXT:
 ${strategicContext}
 
+SPECIAL MOVES AVAILABLE:
+${specialMovesInfo}
+
 MOVE HISTORY:
 ${moveHistory || 'Game just started'}
 
@@ -86,7 +93,8 @@ INSTRUCTIONS:
 1. You MUST choose EXACTLY one move from the LEGAL MOVES list above
 2. If in check, your move MUST escape check (all provided moves already satisfy this)
 3. Consider tactical opportunities while respecting chess rules
-4. Explain your move choice briefly but clearly
+4. If a move involves pawn promotion, include your choice in the response
+5. Explain your move choice briefly but clearly
 
 Respond with valid JSON:
 {
@@ -94,6 +102,86 @@ Respond with valid JSON:
   "move": "exact_move_from_legal_moves_list",
   "chatMessage": "Brief explanation of your move (1-2 sentences)"
 }`;
+};
+
+export const generatePromotionPrompt = (
+  board: (ChessPiece | null)[][],
+  color: PieceColor,
+  promotionSquare: string,
+  gameHistory: Move[],
+  opponentName: string = 'Player',
+  aiName?: string
+): string => {
+  const fen = generateFEN(board, color);
+  const moveHistory = convertToSAN(gameHistory);
+  const tacticalSituation = analyzeTacticalSituation(board, color);
+  
+  return `PAWN PROMOTION REQUIRED
+
+Your pawn has reached the final rank at ${promotionSquare} and MUST be promoted to another piece.
+
+GAME CONTEXT:
+Position (FEN): ${fen}
+Move history: ${moveHistory || 'Game just started'}
+You (${aiName || 'AI'}): Playing as ${color}
+Opponent (${opponentName}): Playing as ${color === 'white' ? 'black' : 'white'}
+
+PROMOTION OPTIONS:
+- Queen (most powerful, can move like rook + bishop)
+- Rook (powerful in open files and ranks)  
+- Bishop (good for long diagonal control)
+- Knight (unique L-shaped moves, good for forks)
+
+TACTICAL ANALYSIS:
+${generateTacticalAnalysis(tacticalSituation)}
+
+PROMOTION STRATEGY:
+Consider the current position and choose the piece that best serves your strategy:
+- Queen: Usually the best choice for maximum power
+- Rook: Good when you need control of files/ranks
+- Bishop: Useful for diagonal pressure
+- Knight: Best for tactical complications or when queen would be immediately captured
+
+Choose wisely - this decision could determine the game outcome!
+
+Respond with valid JSON:
+{
+  "promotionPiece": "queen|rook|bishop|knight",
+  "chatMessage": "Brief explanation of your promotion choice"
+}`;
+};
+
+const generateSpecialMovesInfo = (board: (ChessPiece | null)[][], color: PieceColor, validMoves: string[]): string => {
+  let info = '';
+  
+  // Check for castling moves
+  const castlingMoves = validMoves.filter(move => {
+    const [from, to] = move.split('-');
+    const [fromRow, fromCol] = [from.charCodeAt(0) - 97, 8 - parseInt(from[1])];
+    const [toRow, toCol] = [to.charCodeAt(0) - 97, 8 - parseInt(to[1])];
+    const piece = board[8 - parseInt(from[1])][from.charCodeAt(0) - 97];
+    return piece?.type === 'king' && Math.abs(toCol - fromCol) === 2;
+  });
+  
+  if (castlingMoves.length > 0) {
+    info += `🏰 CASTLING AVAILABLE: ${castlingMoves.join(', ')}\n`;
+    info += `   Castling moves king 2 squares and rook to adjacent square\n`;
+  }
+  
+  // Check for promotion moves
+  const promotionMoves = validMoves.filter(move => {
+    const [from, to] = move.split('-');
+    const [fromRow, fromCol] = [from.charCodeAt(0) - 97, 8 - parseInt(from[1])];
+    const piece = board[8 - parseInt(from[1])][from.charCodeAt(0) - 97];
+    return piece?.type === 'pawn' && isPawnPromotion(from, to, piece);
+  });
+  
+  if (promotionMoves.length > 0) {
+    info += `👑 PAWN PROMOTION AVAILABLE: ${promotionMoves.join(', ')}\n`;
+    info += `   These moves will promote pawn to Queen (or other piece of choice)\n`;
+  }
+  
+  return info || 'No special moves available this turn.';
 };
 
 const generateGameStateDescription = (validation: GameStateValidation): string => {

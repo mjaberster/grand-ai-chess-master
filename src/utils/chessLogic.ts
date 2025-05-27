@@ -36,6 +36,39 @@ export const coordsToPosition = (row: number, col: number): string => {
   return `${String.fromCharCode(97 + col)}${8 - row}`;
 };
 
+export const isPawnPromotion = (from: string, to: string, piece: ChessPiece): boolean => {
+  if (piece.type !== 'pawn') return false;
+  const [, toRow] = positionToCoords(to);
+  return (piece.color === 'white' && toRow === 0) || (piece.color === 'black' && toRow === 7);
+};
+
+export const isCastlingMove = (from: string, to: string, piece: ChessPiece): boolean => {
+  if (piece.type !== 'king') return false;
+  const [fromRow, fromCol] = positionToCoords(from);
+  const [toRow, toCol] = positionToCoords(to);
+  return fromRow === toRow && Math.abs(toCol - fromCol) === 2;
+};
+
+export const canCastle = (board: (ChessPiece | null)[][], color: PieceColor, side: 'kingside' | 'queenside'): boolean => {
+  const row = color === 'white' ? 7 : 0;
+  const king = board[row][4];
+  
+  // King must be in original position and not moved
+  if (!king || king.type !== 'king' || king.hasMoved) return false;
+  
+  if (side === 'kingside') {
+    const rook = board[row][7];
+    if (!rook || rook.type !== 'rook' || rook.hasMoved) return false;
+    // Squares between king and rook must be empty
+    return !board[row][5] && !board[row][6];
+  } else {
+    const rook = board[row][0];
+    if (!rook || rook.type !== 'rook' || rook.hasMoved) return false;
+    // Squares between king and rook must be empty
+    return !board[row][1] && !board[row][2] && !board[row][3];
+  }
+};
+
 export const isValidMove = (board: (ChessPiece | null)[][], from: string, to: string): boolean => {
   const [fromRow, fromCol] = positionToCoords(from);
   const [toRow, toCol] = positionToCoords(to);
@@ -45,6 +78,12 @@ export const isValidMove = (board: (ChessPiece | null)[][], from: string, to: st
   
   const targetPiece = board[toRow][toCol];
   if (targetPiece && targetPiece.color === piece.color) return false;
+  
+  // Handle castling
+  if (piece.type === 'king' && Math.abs(toCol - fromCol) === 2) {
+    const side = toCol > fromCol ? 'kingside' : 'queenside';
+    return canCastle(board, piece.color, side);
+  }
   
   const rowDiff = Math.abs(toRow - fromRow);
   const colDiff = Math.abs(toCol - fromCol);
@@ -107,17 +146,78 @@ const isPathClear = (board: (ChessPiece | null)[][], fromRow: number, fromCol: n
   return true;
 };
 
-export const makeMove = (board: (ChessPiece | null)[][], from: string, to: string): (ChessPiece | null)[][] => {
+export const executeCastling = (board: (ChessPiece | null)[][], from: string, to: string): (ChessPiece | null)[][] => {
   const newBoard = board.map(row => [...row]);
   const [fromRow, fromCol] = positionToCoords(from);
   const [toRow, toCol] = positionToCoords(to);
   
-  const piece = newBoard[fromRow][fromCol];
-  if (piece) {
-    piece.position = to;
-    piece.hasMoved = true;
-    newBoard[toRow][toCol] = piece;
-    newBoard[fromRow][fromCol] = null;
+  const king = newBoard[fromRow][fromCol];
+  if (!king) return newBoard;
+  
+  // Move king
+  king.position = to;
+  king.hasMoved = true;
+  newBoard[toRow][toCol] = king;
+  newBoard[fromRow][fromCol] = null;
+  
+  // Move rook
+  if (toCol > fromCol) { // Kingside castling
+    const rook = newBoard[fromRow][7];
+    if (rook) {
+      const rookTo = coordsToPosition(fromRow, 5);
+      rook.position = rookTo;
+      rook.hasMoved = true;
+      newBoard[fromRow][5] = rook;
+      newBoard[fromRow][7] = null;
+    }
+  } else { // Queenside castling
+    const rook = newBoard[fromRow][0];
+    if (rook) {
+      const rookTo = coordsToPosition(fromRow, 3);
+      rook.position = rookTo;
+      rook.hasMoved = true;
+      newBoard[fromRow][3] = rook;
+      newBoard[fromRow][0] = null;
+    }
+  }
+  
+  return newBoard;
+};
+
+export const executePromotion = (board: (ChessPiece | null)[][], to: string, promotionPiece: PieceType): (ChessPiece | null)[][] => {
+  const newBoard = board.map(row => [...row]);
+  const [toRow, toCol] = positionToCoords(to);
+  
+  const piece = newBoard[toRow][toCol];
+  if (piece && piece.type === 'pawn') {
+    piece.type = promotionPiece;
+  }
+  
+  return newBoard;
+};
+
+export const makeMove = (board: (ChessPiece | null)[][], from: string, to: string, promotionPiece?: PieceType): (ChessPiece | null)[][] => {
+  const [fromRow, fromCol] = positionToCoords(from);
+  const [toRow, toCol] = positionToCoords(to);
+  
+  const piece = board[fromRow][fromCol];
+  if (!piece) return board;
+  
+  // Handle castling
+  if (isCastlingMove(from, to, piece)) {
+    return executeCastling(board, from, to);
+  }
+  
+  // Regular move
+  let newBoard = board.map(row => [...row]);
+  piece.position = to;
+  piece.hasMoved = true;
+  newBoard[toRow][toCol] = piece;
+  newBoard[fromRow][fromCol] = null;
+  
+  // Handle pawn promotion
+  if (isPawnPromotion(from, to, piece) && promotionPiece) {
+    newBoard = executePromotion(newBoard, to, promotionPiece);
   }
   
   return newBoard;
@@ -169,6 +269,18 @@ export const getAllValidMoves = (board: (ChessPiece | null)[][], color: PieceCol
             if (isValidMove(board, from, to)) {
               moves.push(`${from}-${to}`);
             }
+          }
+        }
+        
+        // Add castling moves
+        if (piece.type === 'king') {
+          if (canCastle(board, color, 'kingside')) {
+            const kingside = coordsToPosition(row, col + 2);
+            moves.push(`${from}-${kingside}`);
+          }
+          if (canCastle(board, color, 'queenside')) {
+            const queenside = coordsToPosition(row, col - 2);
+            moves.push(`${from}-${queenside}`);
           }
         }
       }
@@ -388,23 +500,6 @@ const getControlledSquares = (board: (ChessPiece | null)[][]): { white: string[]
   }
   
   return controlled;
-};
-
-const canCastle = (board: (ChessPiece | null)[][], color: PieceColor, side: 'kingside' | 'queenside'): boolean => {
-  const row = color === 'white' ? 7 : 0;
-  const king = board[row][4];
-  
-  if (!king || king.type !== 'king' || king.hasMoved) return false;
-  
-  if (side === 'kingside') {
-    const rook = board[row][7];
-    if (!rook || rook.type !== 'rook' || rook.hasMoved) return false;
-    return !board[row][5] && !board[row][6];
-  } else {
-    const rook = board[row][0];
-    if (!rook || rook.type !== 'rook' || rook.hasMoved) return false;
-    return !board[row][1] && !board[row][2] && !board[row][3];
-  }
 };
 
 export const isCheckmate = (board: (ChessPiece | null)[][], color: PieceColor): boolean => {

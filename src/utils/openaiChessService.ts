@@ -1,6 +1,7 @@
-import { ChessPiece, PieceColor, Move } from '@/types/chess';
+import { ChessPiece, PieceColor, Move, PieceType } from '@/types/chess';
 import { getAllLegalMoves, validateGameState, isLegalMove } from './chessRuleEnforcement';
-import { generateEnhancedMovePrompt, generateRetryPrompt } from './enhancedChessPrompts';
+import { generateEnhancedMovePrompt, generateRetryPrompt, generatePromotionPrompt } from './enhancedChessPrompts';
+import { isPawnPromotion } from './chessLogic';
 import { 
   generateAnalysisPrompt, 
   generateExplanationPrompt,
@@ -11,6 +12,12 @@ interface OpenAIResponse {
   move: Move | null;
   chatMessage: string;
   aiName?: string;
+  promotionPiece?: PieceType;
+}
+
+interface PromotionResponse {
+  promotionPiece: PieceType;
+  chatMessage: string;
 }
 
 const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
@@ -141,6 +148,31 @@ export const getOpenAIMove = async (
       return createFallbackMove(legalMoves, board, 'Move creation failed. Using legal fallback.', currentAiName);
     }
 
+    // Check if move requires promotion
+    if (isPawnPromotion(move.from, move.to, move.piece)) {
+      console.log('👑 Pawn promotion detected, requesting AI choice...');
+      
+      try {
+        const promotionChoice = await getAIPromotionChoice(board, color, move.to, gameHistory, opponentName, currentAiName);
+        console.log('✅ AI promotion choice received:', promotionChoice);
+        
+        return {
+          move,
+          chatMessage: `${response.chatMessage} ${promotionChoice.chatMessage}`,
+          aiName: response.aiName || currentAiName,
+          promotionPiece: promotionChoice.promotionPiece
+        };
+      } catch (error) {
+        console.error('❌ Promotion choice failed, defaulting to Queen:', error);
+        return {
+          move,
+          chatMessage: `${response.chatMessage} Promoting to Queen by default.`,
+          aiName: response.aiName || currentAiName,
+          promotionPiece: 'queen'
+        };
+      }
+    }
+
     console.log('🎉 Legal OpenAI Move Success:', {
       move: moveNotation,
       chatMessage: response.chatMessage,
@@ -163,6 +195,39 @@ export const getOpenAIMove = async (
     }
     
     return createFallbackMove(legalMoves, board, 'AI temporarily unavailable. Using legal fallback move.', currentAiName);
+  }
+};
+
+export const getAIPromotionChoice = async (
+  board: (ChessPiece | null)[][],
+  color: PieceColor,
+  promotionSquare: string,
+  gameHistory: Move[],
+  opponentName: string = 'Player',
+  aiName?: string
+): Promise<PromotionResponse> => {
+  console.log('👑 AI Promotion Choice Request:', { color, promotionSquare, aiName });
+  
+  try {
+    const prompt = generatePromotionPrompt(board, color, promotionSquare, gameHistory, opponentName, aiName);
+    console.log('📝 Promotion Prompt Generated:', prompt.substring(0, 200) + '...');
+    
+    const response = await callOpenAI(prompt);
+    console.log('✅ Promotion Response:', response);
+    
+    const validPieces: PieceType[] = ['queen', 'rook', 'bishop', 'knight'];
+    const promotionPiece = validPieces.includes(response.promotionPiece) ? response.promotionPiece : 'queen';
+    
+    return {
+      promotionPiece,
+      chatMessage: response.chatMessage || `Promoting to ${promotionPiece}.`
+    };
+  } catch (error) {
+    console.error('❌ Promotion Choice Error:', error);
+    return {
+      promotionPiece: 'queen',
+      chatMessage: 'Promoting to Queen (default choice).'
+    };
   }
 };
 
@@ -347,6 +412,17 @@ const simulateOpenAICall = async (prompt: string, expectJSON: boolean): Promise<
   await new Promise(resolve => setTimeout(resolve, thinkingTime));
   
   if (expectJSON) {
+    // Handle promotion prompts
+    if (prompt.includes('PAWN PROMOTION REQUIRED')) {
+      const promotionOptions: PieceType[] = ['queen', 'rook', 'bishop', 'knight'];
+      const selectedPromotion = promotionOptions[Math.floor(Math.random() * promotionOptions.length)];
+      
+      return {
+        promotionPiece: selectedPromotion,
+        chatMessage: `Promoting to ${selectedPromotion} for maximum tactical advantage.`
+      };
+    }
+    
     // Extract legal moves from prompt to ensure we return a legal move
     const legalMovesMatch = prompt.match(/LEGAL MOVES AVAILABLE:\s*([^\n]+)/);
     const legalMoves = legalMovesMatch ? legalMovesMatch[1].split(', ').filter(m => m.includes('-')) : ['e2-e4'];
@@ -400,6 +476,12 @@ const generateContextualChatMessage = (prompt: string): string => {
   }
   if (prompt.includes('Endgame')) {
     return 'Focusing on endgame technique while respecting all chess rules.';
+  }
+  if (prompt.includes('CASTLING AVAILABLE')) {
+    return 'Considering castling to improve king safety.';
+  }
+  if (prompt.includes('PAWN PROMOTION AVAILABLE')) {
+    return 'Promoting pawn for maximum strategic advantage.';
   }
   
   const messages = [

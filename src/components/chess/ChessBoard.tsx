@@ -1,14 +1,14 @@
-
 import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, RotateCcw, Flag, Clock } from 'lucide-react';
-import { GameMode, ChessPiece, PieceColor, Move } from '@/types/chess';
+import { GameMode, ChessPiece, PieceColor, Move, PieceType } from '@/types/chess';
 import ChessSquare from './ChessSquare';
 import GameInfo from './GameInfo';
 import ChatBox from './ChatBox';
 import MoveHistory from './MoveHistory';
-import { initializeBoard, makeMove } from '@/utils/chessLogic';
+import PromotionDialog from './PromotionDialog';
+import { initializeBoard, makeMove, isPawnPromotion, isCastlingMove } from '@/utils/chessLogic';
 import { getAIMove } from '@/utils/aiService';
 import { getOpenAIMove } from '@/utils/openaiChessService';
 import { isLegalMove, getAllLegalMoves, validateGameState } from '@/utils/chessRuleEnforcement';
@@ -37,6 +37,8 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
   const [aiName, setAiName] = useState<string>('');
   const [gameOver, setGameOver] = useState(false);
   const [winner, setWinner] = useState<PieceColor | 'draw' | null>(null);
+  const [showPromotionDialog, setShowPromotionDialog] = useState(false);
+  const [pendingPromotion, setPendingPromotion] = useState<{from: string, to: string, piece: ChessPiece} | null>(null);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -105,17 +107,20 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
     try {
       let aiMove;
       let chatMessage = '';
+      let promotionPiece: PieceType | undefined;
 
       if (gameMode === 'human-vs-ai') {
         console.log('🎯 Using Enhanced Rule-Enforced OpenAI Service');
         const result = await getOpenAIMove(board, currentPlayer, gameHistory, 'Player', aiName);
         aiMove = result.move;
         chatMessage = result.chatMessage;
+        promotionPiece = result.promotionPiece;
         
         console.log('📤 Rule-Enforced OpenAI Result:', {
           moveNotation: aiMove?.notation,
           hasMove: !!aiMove,
           chatMessage,
+          promotionPiece,
           aiNameChanged: result.aiName !== aiName
         });
         
@@ -137,6 +142,11 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
       } else {
         console.log('🎯 Using Basic AI Service for AI vs AI');
         aiMove = await getAIMove(board, currentPlayer, gameHistory);
+        
+        // Handle promotion for basic AI (default to queen)
+        if (aiMove && isPawnPromotion(aiMove.from, aiMove.to, aiMove.piece)) {
+          promotionPiece = 'queen';
+        }
       }
 
       if (aiMove) {
@@ -167,10 +177,11 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
           to: aiMove.to,
           piece: `${aiMove.piece.color} ${aiMove.piece.type}`,
           captured: aiMove.captured ? `${aiMove.captured.color} ${aiMove.captured.type}` : 'none',
+          promotionPiece,
           legal: true
         });
         
-        const newBoard = makeMove(board, aiMove.from, aiMove.to);
+        const newBoard = makeMove(board, aiMove.from, aiMove.to, promotionPiece);
         setBoard(newBoard);
         setGameHistory(prev => [...prev, aiMove]);
         setCurrentPlayer(currentPlayer === 'white' ? 'black' : 'white');
@@ -218,20 +229,18 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
           player: currentPlayer
         });
 
-        const newBoard = makeMove(board, selectedSquare, position);
-        const move: Move = {
-          from: selectedSquare,
-          to: position,
-          piece: board[fromRow][fromCol]!,
-          captured: piece || undefined,
-          timestamp: Date.now(),
-          notation: `${selectedSquare}-${position}`
-        };
+        const movingPiece = board[fromRow][fromCol]!;
+        
+        // Check if this is a pawn promotion
+        if (isPawnPromotion(selectedSquare, position, movingPiece)) {
+          console.log('👑 Human pawn promotion detected');
+          setPendingPromotion({ from: selectedSquare, to: position, piece: movingPiece });
+          setShowPromotionDialog(true);
+          setSelectedSquare(null);
+          return;
+        }
 
-        setBoard(newBoard);
-        setGameHistory(prev => [...prev, move]);
-        setCurrentPlayer(currentPlayer === 'white' ? 'black' : 'white');
-        setSelectedSquare(null);
+        executeMove(selectedSquare, position, movingPiece, piece);
       } else {
         console.warn('❌ Human attempted illegal move:', {
           from: selectedSquare,
@@ -260,6 +269,63 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
         setSelectedSquare(position);
       }
     }
+  };
+
+  const executeMove = (from: string, to: string, movingPiece: ChessPiece, capturedPiece: ChessPiece | null, promotionPiece?: PieceType) => {
+    const newBoard = makeMove(board, from, to, promotionPiece);
+    const move: Move = {
+      from,
+      to,
+      piece: movingPiece,
+      captured: capturedPiece || undefined,
+      timestamp: Date.now(),
+      notation: `${from}-${to}`
+    };
+
+    setBoard(newBoard);
+    setGameHistory(prev => [...prev, move]);
+    setCurrentPlayer(currentPlayer === 'white' ? 'black' : 'white');
+    setSelectedSquare(null);
+
+    // Add move notation to chat for special moves
+    if (isCastlingMove(from, to, movingPiece)) {
+      const castlingMessage: ChatMessage = {
+        id: Date.now().toString(),
+        sender: 'ai',
+        message: `Castling completed: ${from}-${to}`,
+        timestamp: Date.now()
+      };
+      setChatMessages(prev => [...prev, castlingMessage]);
+    }
+
+    if (promotionPiece) {
+      const promotionMessage: ChatMessage = {
+        id: Date.now().toString(),
+        sender: 'ai',
+        message: `Pawn promoted to ${promotionPiece}!`,
+        timestamp: Date.now()
+      };
+      setChatMessages(prev => [...prev, promotionMessage]);
+    }
+  };
+
+  const handlePromotionSelect = (pieceType: PieceType) => {
+    if (pendingPromotion) {
+      console.log('✅ Human promotion choice:', pieceType);
+      const { from, to, piece } = pendingPromotion;
+      const [fromCol, fromRow] = [from.charCodeAt(0) - 97, 8 - parseInt(from[1])];
+      const [toCol, toRow] = [to.charCodeAt(0) - 97, 8 - parseInt(to[1])];
+      const capturedPiece = board[toRow][toCol];
+      
+      executeMove(from, to, piece, capturedPiece, pieceType);
+      setPendingPromotion(null);
+    }
+  };
+
+  const handlePromotionClose = () => {
+    setShowPromotionDialog(false);
+    setPendingPromotion(null);
+    setSelectedSquare(null);
   };
 
   const handleSendMessage = (message: string) => {
@@ -350,6 +416,14 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
             </p>
           </div>
         )}
+
+        {/* Promotion Dialog */}
+        <PromotionDialog
+          isOpen={showPromotionDialog}
+          color={currentPlayer}
+          onSelect={handlePromotionSelect}
+          onClose={handlePromotionClose}
+        />
 
         {/* Main Game Layout - Board dominant with chat on the right */}
         <div className="flex gap-6">
