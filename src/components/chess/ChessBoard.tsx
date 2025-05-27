@@ -11,11 +11,15 @@ import PromotionDialog from './PromotionDialog';
 import { initializeBoard, makeMove, isPawnPromotion, isCastlingMove } from '@/utils/chessLogic';
 import { getAIMove } from '@/utils/aiService';
 import { getOpenAIMove } from '@/utils/openaiChessService';
+import { createChessAssistant, createGameThread, getAssistantChessMove, sendChatToAssistant } from '@/utils/openaiAssistantsService';
 import { isLegalMove, getAllLegalMoves, validateGameState } from '@/utils/chessRuleEnforcement';
 
 interface ChessBoardProps {
   gameMode: GameMode;
   onEndGame: () => void;
+  opponent1Type?: string;
+  opponent2Type?: string;
+  playerColor?: PieceColor;
 }
 
 interface ChatMessage {
@@ -25,7 +29,7 @@ interface ChatMessage {
   timestamp: number;
 }
 
-const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
+const ChessBoard = ({ gameMode, onEndGame, opponent1Type, opponent2Type, playerColor }: ChessBoardProps) => {
   const [board, setBoard] = useState<(ChessPiece | null)[][]>(initializeBoard());
   const [currentPlayer, setCurrentPlayer] = useState<PieceColor>('white');
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
@@ -33,12 +37,16 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
   const [isThinking, setIsThinking] = useState(false);
   const [gameTime, setGameTime] = useState(0);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [playerColor, setPlayerColor] = useState<PieceColor>('white');
-  const [aiName, setAiName] = useState<string>('');
   const [gameOver, setGameOver] = useState(false);
   const [winner, setWinner] = useState<PieceColor | 'draw' | null>(null);
   const [showPromotionDialog, setShowPromotionDialog] = useState(false);
   const [pendingPromotion, setPendingPromotion] = useState<{from: string, to: string, piece: ChessPiece} | null>(null);
+  
+  // Assistant-specific state
+  const [assistantId, setAssistantId] = useState<string>('');
+  const [threadId, setThreadId] = useState<string>('');
+  const [aiName, setAiName] = useState<string>('');
+  const [useAssistantsAPI, setUseAssistantsAPI] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -48,6 +56,55 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
     }, 1000);
     return () => clearInterval(timer);
   }, [gameOver]);
+
+  useEffect(() => {
+    // Initialize assistant if playing against AI
+    if (gameMode === 'human-vs-ai' && (opponent1Type || opponent2Type)) {
+      initializeAssistant();
+    }
+  }, [gameMode, opponent1Type, opponent2Type]);
+
+  const initializeAssistant = async () => {
+    console.log('🚀 Initializing Assistant API integration');
+    
+    // Determine which opponent is the AI
+    const aiOpponentType = playerColor === 'white' ? opponent2Type : opponent1Type;
+    
+    if (!aiOpponentType || aiOpponentType === 'human') return;
+    
+    setUseAssistantsAPI(true);
+    
+    try {
+      // Create the assistant
+      const assistant = await createChessAssistant(aiOpponentType);
+      setAssistantId(assistant.id);
+      setAiName(assistant.name);
+      
+      // Create a thread for this game
+      const thread = await createGameThread(assistant.id, {
+        gameMode,
+        playerColor,
+        opponent1Type,
+        opponent2Type
+      });
+      setThreadId(thread);
+      
+      console.log('✅ Assistant initialized:', { assistantId: assistant.id, threadId: thread });
+      
+      // Add welcome message
+      const welcomeMessage: ChatMessage = {
+        id: Date.now().toString(),
+        sender: 'ai',
+        message: `Hello! I'm ${assistant.name}, your chess partner for this game. I'm excited to play with you and discuss our moves as we go. Good luck!`,
+        timestamp: Date.now()
+      };
+      setChatMessages([welcomeMessage]);
+      
+    } catch (error) {
+      console.error('❌ Assistant initialization failed:', error);
+      setUseAssistantsAPI(false);
+    }
+  };
 
   useEffect(() => {
     // Validate game state after each move
@@ -82,7 +139,7 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
       };
       setChatMessages(prev => [...prev, gameOverChatMessage]);
       
-      return; // Stop here if game is over
+      return;
     }
 
     if (!gameOver && (gameMode === 'ai-vs-ai' || (gameMode === 'human-vs-ai' && currentPlayer !== playerColor))) {
@@ -96,11 +153,12 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
       return;
     }
 
-    console.log('🤖 AI Move Handler Started with Rule Enforcement:', {
+    console.log('🤖 AI Move Handler Started:', {
       gameMode,
       currentPlayer,
       playerColor,
-      moveCount: gameHistory.length
+      moveCount: gameHistory.length,
+      useAssistantsAPI
     });
     
     setIsThinking(true);
@@ -109,23 +167,35 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
       let chatMessage = '';
       let promotionPiece: PieceType | undefined;
 
-      if (gameMode === 'human-vs-ai') {
-        console.log('🎯 Using Enhanced Rule-Enforced OpenAI Service');
+      if (gameMode === 'human-vs-ai' && useAssistantsAPI && assistantId && threadId) {
+        console.log('🎯 Using OpenAI Assistants API');
+        const result = await getAssistantChessMove(assistantId, threadId, board, currentPlayer, gameHistory);
+        aiMove = result.move;
+        chatMessage = result.chatMessage;
+        
+        console.log('📤 Assistants API Result:', {
+          moveNotation: aiMove?.notation,
+          hasMove: !!aiMove,
+          chatMessage: chatMessage.substring(0, 100) + '...'
+        });
+        
+        if (chatMessage) {
+          const newChatMessage: ChatMessage = {
+            id: Date.now().toString(),
+            sender: 'ai',
+            message: chatMessage,
+            timestamp: Date.now()
+          };
+          setChatMessages(prev => [...prev, newChatMessage]);
+        }
+      } else if (gameMode === 'human-vs-ai') {
+        console.log('🎯 Using Enhanced OpenAI Service');
         const result = await getOpenAIMove(board, currentPlayer, gameHistory, 'Player', aiName);
         aiMove = result.move;
         chatMessage = result.chatMessage;
         promotionPiece = result.promotionPiece;
         
-        console.log('📤 Rule-Enforced OpenAI Result:', {
-          moveNotation: aiMove?.notation,
-          hasMove: !!aiMove,
-          chatMessage,
-          promotionPiece,
-          aiNameChanged: result.aiName !== aiName
-        });
-        
         if (result.aiName && !aiName) {
-          console.log('🏷️ Setting AI name:', result.aiName);
           setAiName(result.aiName);
         }
         
@@ -137,20 +207,17 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
             timestamp: Date.now()
           };
           setChatMessages(prev => [...prev, newChatMessage]);
-          console.log('💬 Added chat message:', chatMessage);
         }
       } else {
         console.log('🎯 Using Basic AI Service for AI vs AI');
         aiMove = await getAIMove(board, currentPlayer, gameHistory);
         
-        // Handle promotion for basic AI (default to queen)
         if (aiMove && isPawnPromotion(aiMove.from, aiMove.to, aiMove.piece)) {
           promotionPiece = 'queen';
         }
       }
 
       if (aiMove) {
-        // Double-check that the AI move is legal before executing
         if (!isLegalMove(board, aiMove.from, aiMove.to, currentPlayer)) {
           console.error('🚨 AI returned illegal move:', {
             from: aiMove.from,
@@ -158,7 +225,6 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
             piece: `${aiMove.piece.color} ${aiMove.piece.type}`
           });
           
-          // This should not happen with proper rule enforcement, but as a safety net
           const legalMoves = getAllLegalMoves(board, currentPlayer);
           if (legalMoves.length > 0) {
             console.log('🔧 Using fallback legal move');
@@ -167,7 +233,7 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
             aiMove.to = fallbackMove[1];
             aiMove.notation = legalMoves[0];
           } else {
-            console.error('💀 No legal moves available - should have been detected earlier');
+            console.error('💀 No legal moves available');
             return;
           }
         }
@@ -178,31 +244,20 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
           piece: `${aiMove.piece.color} ${aiMove.piece.type}`,
           captured: aiMove.captured ? `${aiMove.captured.color} ${aiMove.captured.type}` : 'none',
           promotionPiece,
-          legal: true
+          apiUsed: useAssistantsAPI ? 'Assistants' : 'Chat Completions'
         });
         
         const newBoard = makeMove(board, aiMove.from, aiMove.to, promotionPiece);
         setBoard(newBoard);
         setGameHistory(prev => [...prev, aiMove]);
         setCurrentPlayer(currentPlayer === 'white' ? 'black' : 'white');
-        
-        console.log('🔄 Board state updated, switching to:', currentPlayer === 'white' ? 'black' : 'white');
       } else {
         console.log('🏁 AI returned null move - game over scenario');
       }
     } catch (error) {
-      console.error('💥 AI move failed:', {
-        error: error instanceof Error ? error.message : error,
-        stack: error instanceof Error ? error.stack : 'No stack trace',
-        gameState: {
-          currentPlayer,
-          moveCount: gameHistory.length,
-          gameMode
-        }
-      });
+      console.error('💥 AI move failed:', error);
     } finally {
       setIsThinking(false);
-      console.log('🏁 AI move handler completed');
     }
   };
 
@@ -221,7 +276,6 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
 
       const [fromCol, fromRow] = [selectedSquare.charCodeAt(0) - 97, 8 - parseInt(selectedSquare[1])];
       
-      // Use legal move validation instead of basic valid move
       if (isLegalMove(board, selectedSquare, position, currentPlayer)) {
         console.log('✅ Human move is legal:', {
           from: selectedSquare,
@@ -231,7 +285,6 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
 
         const movingPiece = board[fromRow][fromCol]!;
         
-        // Check if this is a pawn promotion
         if (isPawnPromotion(selectedSquare, position, movingPiece)) {
           console.log('👑 Human pawn promotion detected');
           setPendingPromotion({ from: selectedSquare, to: position, piece: movingPiece });
@@ -245,11 +298,9 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
         console.warn('❌ Human attempted illegal move:', {
           from: selectedSquare,
           to: position,
-          player: currentPlayer,
-          reason: 'Would leave king in check or violate chess rules'
+          player: currentPlayer
         });
 
-        // Show visual feedback for illegal move attempt
         const illegalMoveMessage: ChatMessage = {
           id: Date.now().toString(),
           sender: 'ai',
@@ -287,7 +338,6 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
     setCurrentPlayer(currentPlayer === 'white' ? 'black' : 'white');
     setSelectedSquare(null);
 
-    // Add move notation to chat for special moves
     if (isCastlingMove(from, to, movingPiece)) {
       const castlingMessage: ChatMessage = {
         id: Date.now().toString(),
@@ -328,7 +378,7 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
     setSelectedSquare(null);
   };
 
-  const handleSendMessage = (message: string) => {
+  const handleSendMessage = async (message: string) => {
     const newMessage: ChatMessage = {
       id: Date.now().toString(),
       sender: 'human',
@@ -336,6 +386,22 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
       timestamp: Date.now()
     };
     setChatMessages(prev => [...prev, newMessage]);
+
+    // If using Assistants API, send to assistant
+    if (useAssistantsAPI && assistantId && threadId) {
+      try {
+        const response = await sendChatToAssistant(assistantId, threadId, message);
+        const aiResponse: ChatMessage = {
+          id: (Date.now() + 1).toString(),
+          sender: 'ai',
+          message: response,
+          timestamp: Date.now() + 1
+        };
+        setChatMessages(prev => [...prev, aiResponse]);
+      } catch (error) {
+        console.error('❌ Chat message failed:', error);
+      }
+    }
   };
 
   const formatTime = (seconds: number) => {
@@ -371,8 +437,6 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
 
   const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
   const ranks = ['8', '7', '6', '5', '4', '3', '2', '1'];
-
-  // Get current game state for display
   const gameValidation = validateGameState(board, currentPlayer);
 
   return (
@@ -414,6 +478,11 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
             <p className="text-amber-200 mt-2">
               {winner === 'draw' ? 'No legal moves available but king not in check' : 'Checkmate - King captured!'}
             </p>
+            {useAssistantsAPI && (
+              <p className="text-amber-200 text-sm mt-1">
+                Powered by OpenAI Assistants API
+              </p>
+            )}
           </div>
         )}
 
@@ -425,36 +494,30 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
           onClose={handlePromotionClose}
         />
 
-        {/* Main Game Layout - Board dominant with chat on the right */}
+        {/* Main Game Layout */}
         <div className="flex gap-6">
-          {/* Chess Board - Dominant component (70% width) */}
+          {/* Chess Board */}
           <div className="flex-1 max-w-4xl">
             <Card className="bg-slate-800/50 border-slate-700 backdrop-blur-sm p-6">
               <div className="max-w-3xl mx-auto">
-                {/* Board with coordinates */}
                 <div className="inline-block">
                   <div className="grid grid-cols-10 grid-rows-10 gap-0 aspect-square border-4 border-amber-400 rounded-lg overflow-hidden">
-                    {/* Top-left corner (empty) */}
+                    {/* ... keep existing code (board rendering) */}
                     <div className="flex items-center justify-center bg-slate-900/50"></div>
                     
-                    {/* Top file labels (a-h) */}
                     {files.map(file => (
                       <div key={`top-${file}`} className="flex items-center justify-center text-amber-300 font-bold text-lg bg-slate-900/50">
                         {file}
                       </div>
                     ))}
                     
-                    {/* Top-right corner (empty) */}
                     <div className="flex items-center justify-center bg-slate-900/50"></div>
 
-                    {/* Board rows with left and right rank labels */}
                     {board.map((row, rowIndex) => [
-                      // Left rank label
                       <div key={`left-${ranks[rowIndex]}`} className="flex items-center justify-center text-amber-300 font-bold text-lg bg-slate-900/50">
                         {ranks[rowIndex]}
                       </div>,
                       
-                      // Chess squares
                       ...row.map((piece, colIndex) => {
                         const position = `${String.fromCharCode(97 + colIndex)}${8 - rowIndex}`;
                         const isLight = (rowIndex + colIndex) % 2 === 0;
@@ -473,23 +536,19 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
                         );
                       }),
                       
-                      // Right rank label
                       <div key={`right-${ranks[rowIndex]}`} className="flex items-center justify-center text-amber-300 font-bold text-lg bg-slate-900/50">
                         {ranks[rowIndex]}
                       </div>
                     ])}
 
-                    {/* Bottom-left corner (empty) */}
                     <div className="flex items-center justify-center bg-slate-900/50"></div>
                     
-                    {/* Bottom file labels (a-h) */}
                     {files.map(file => (
                       <div key={`bottom-${file}`} className="flex items-center justify-center text-amber-300 font-bold text-lg bg-slate-900/50">
                         {file}
                       </div>
                     ))}
                     
-                    {/* Bottom-right corner (empty) */}
                     <div className="flex items-center justify-center bg-slate-900/50"></div>
                   </div>
                 </div>
@@ -518,14 +577,19 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
                     : gameValidation.isInCheck
                     ? `${currentPlayer} in CHECK! Must escape!`
                     : isThinking 
-                    ? `${aiName || 'AI'} is analyzing position...` 
+                    ? `${aiName || 'AI'} is ${useAssistantsAPI ? 'thinking deeply' : 'analyzing position'}...` 
                     : `${currentPlayer === 'white' ? 'White' : 'Black'} to move`}
                 </div>
+                {useAssistantsAPI && (
+                  <div className="text-xs text-slate-400 mt-2">
+                    Enhanced with OpenAI Assistants API
+                  </div>
+                )}
               </div>
             </Card>
           </div>
 
-          {/* Chat Panel - Right side (30% width) */}
+          {/* Chat Panel */}
           {gameMode === 'human-vs-ai' && (
             <div className="w-80 flex-shrink-0">
               <ChatBox 
@@ -537,7 +601,7 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
           )}
         </div>
 
-        {/* Bottom Components - Game Info and Move History */}
+        {/* Bottom Components */}
         <div className="mt-6 grid md:grid-cols-2 gap-6">
           <GameInfo 
             gameMode={gameMode}

@@ -30,21 +30,21 @@ const OpponentSelection = ({ onStartGame, onBack }: OpponentSelectionProps) => {
       id: 'gpt-4o' as OpponentType, 
       name: 'GPT-4o', 
       icon: Brain, 
-      description: 'Advanced AI with strategic thinking',
+      description: 'Advanced AI with Assistants API integration',
       color: 'from-blue-500 to-blue-600'
     },
     { 
       id: 'claude' as OpponentType, 
       name: 'Claude', 
       icon: Zap, 
-      description: 'Anthropic\'s sophisticated AI assistant',
+      description: 'Thoughtful AI chess mentor with persistent memory',
       color: 'from-purple-500 to-purple-600'
     },
     { 
       id: 'gemini' as OpponentType, 
       name: 'Gemini', 
       icon: Sparkles, 
-      description: 'Google\'s cutting-edge AI model',
+      description: 'Creative AI explorer with innovative strategies',
       color: 'from-orange-500 to-orange-600'
     },
   ];
@@ -56,6 +56,8 @@ const OpponentSelection = ({ onStartGame, onBack }: OpponentSelectionProps) => {
   };
 
   const humanInvolved = opponent1 === 'human' || opponent2 === 'human';
+  const aiOpponents = [opponent1, opponent2].filter(opp => opp !== 'human');
+  const useAssistantsAPI = aiOpponents.some(opp => ['gpt-4o', 'claude', 'gemini'].includes(opp));
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
@@ -154,6 +156,9 @@ const OpponentSelection = ({ onStartGame, onBack }: OpponentSelectionProps) => {
                 <li>• Click to select pieces, click again to move</li>
                 <li>• {humanInvolved ? 'AI will make moves automatically' : 'Watch AI models battle each other'}</li>
                 <li>• Score is calculated based on game outcome</li>
+                {useAssistantsAPI && (
+                  <li className="text-blue-400">• Enhanced with OpenAI Assistants API for persistent conversations</li>
+                )}
               </ul>
             </div>
 
@@ -161,7 +166,7 @@ const OpponentSelection = ({ onStartGame, onBack }: OpponentSelectionProps) => {
               onClick={handleStartGame}
               className="w-full h-12 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold"
             >
-              Start Game
+              Start Game {useAssistantsAPI && '(Enhanced AI)'}
             </Button>
           </div>
         </div>
