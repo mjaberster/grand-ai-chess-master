@@ -1,4 +1,3 @@
-
 import { ChessPiece, PieceType, PieceColor } from '@/types/chess';
 
 export const initializeBoard = (): (ChessPiece | null)[][] => {
@@ -177,4 +176,243 @@ export const getAllValidMoves = (board: (ChessPiece | null)[][], color: PieceCol
   }
   
   return moves;
+};
+
+// Enhanced board analysis functions
+export interface BoardAnalysis {
+  fen: string;
+  isInCheck: boolean;
+  checkingPieces: string[];
+  threatenedPieces: Array<{ piece: string; threats: string[] }>;
+  materialBalance: number;
+  pieceActivity: { [key: string]: number };
+  kingSafety: { white: number; black: number };
+  controlledSquares: { white: string[]; black: string[] };
+  specialConditions: {
+    canCastle: { white: { kingside: boolean; queenside: boolean }; black: { kingside: boolean; queenside: boolean } };
+    enPassant: string | null;
+    fiftyMoveRule: number;
+  };
+}
+
+export const analyzeBoardState = (board: (ChessPiece | null)[][], color: PieceColor): BoardAnalysis => {
+  const fen = generateFEN(board);
+  const inCheck = isInCheck(board, color);
+  const checkingPieces = findCheckingPieces(board, color);
+  const threatenedPieces = findThreatenedPieces(board, color);
+  const materialBalance = calculateMaterialBalance(board);
+  const pieceActivity = calculatePieceActivity(board);
+  const kingSafety = evaluateKingSafety(board);
+  const controlledSquares = getControlledSquares(board);
+  
+  return {
+    fen,
+    isInCheck: inCheck,
+    checkingPieces,
+    threatenedPieces,
+    materialBalance,
+    pieceActivity,
+    kingSafety,
+    controlledSquares,
+    specialConditions: {
+      canCastle: { 
+        white: { kingside: canCastle(board, 'white', 'kingside'), queenside: canCastle(board, 'white', 'queenside') },
+        black: { kingside: canCastle(board, 'black', 'kingside'), queenside: canCastle(board, 'black', 'queenside') }
+      },
+      enPassant: null, // Simplified for now
+      fiftyMoveRule: 0 // Simplified for now
+    }
+  };
+};
+
+const generateFEN = (board: (ChessPiece | null)[][]): string => {
+  const pieceSymbols = {
+    white: { king: 'K', queen: 'Q', rook: 'R', bishop: 'B', knight: 'N', pawn: 'P' },
+    black: { king: 'k', queen: 'q', rook: 'r', bishop: 'b', knight: 'n', pawn: 'p' }
+  };
+  
+  return board.map(row => {
+    let rowString = '';
+    let emptyCount = 0;
+    
+    row.forEach(piece => {
+      if (piece) {
+        if (emptyCount > 0) {
+          rowString += emptyCount;
+          emptyCount = 0;
+        }
+        rowString += pieceSymbols[piece.color][piece.type];
+      } else {
+        emptyCount++;
+      }
+    });
+    
+    if (emptyCount > 0) {
+      rowString += emptyCount;
+    }
+    
+    return rowString;
+  }).join('/');
+};
+
+const findCheckingPieces = (board: (ChessPiece | null)[][], color: PieceColor): string[] => {
+  const checkingPieces: string[] = [];
+  let kingPosition = '';
+  
+  // Find king
+  for (let row = 0; row < 8; row++) {
+    for (let col = 0; col < 8; col++) {
+      const piece = board[row][col];
+      if (piece && piece.type === 'king' && piece.color === color) {
+        kingPosition = coordsToPosition(row, col);
+        break;
+      }
+    }
+  }
+  
+  if (!kingPosition) return checkingPieces;
+  
+  // Find pieces attacking the king
+  for (let row = 0; row < 8; row++) {
+    for (let col = 0; col < 8; col++) {
+      const piece = board[row][col];
+      if (piece && piece.color !== color) {
+        const position = coordsToPosition(row, col);
+        if (isValidMove(board, position, kingPosition)) {
+          checkingPieces.push(position);
+        }
+      }
+    }
+  }
+  
+  return checkingPieces;
+};
+
+const findThreatenedPieces = (board: (ChessPiece | null)[][], color: PieceColor): Array<{ piece: string; threats: string[] }> => {
+  const threatened: Array<{ piece: string; threats: string[] }> = [];
+  
+  for (let row = 0; row < 8; row++) {
+    for (let col = 0; col < 8; col++) {
+      const piece = board[row][col];
+      if (piece && piece.color === color) {
+        const position = coordsToPosition(row, col);
+        const threats: string[] = [];
+        
+        // Find enemy pieces that can attack this piece
+        for (let eRow = 0; eRow < 8; eRow++) {
+          for (let eCol = 0; eCol < 8; eCol++) {
+            const enemyPiece = board[eRow][eCol];
+            if (enemyPiece && enemyPiece.color !== color) {
+              const enemyPosition = coordsToPosition(eRow, eCol);
+              if (isValidMove(board, enemyPosition, position)) {
+                threats.push(enemyPosition);
+              }
+            }
+          }
+        }
+        
+        if (threats.length > 0) {
+          threatened.push({ piece: position, threats });
+        }
+      }
+    }
+  }
+  
+  return threatened;
+};
+
+const calculateMaterialBalance = (board: (ChessPiece | null)[][]): number => {
+  const values = { pawn: 1, knight: 3, bishop: 3, rook: 5, queen: 9, king: 0 };
+  let whiteValue = 0;
+  let blackValue = 0;
+  
+  board.forEach(row => {
+    row.forEach(piece => {
+      if (piece) {
+        const value = values[piece.type];
+        if (piece.color === 'white') {
+          whiteValue += value;
+        } else {
+          blackValue += value;
+        }
+      }
+    });
+  });
+  
+  return whiteValue - blackValue;
+};
+
+const calculatePieceActivity = (board: (ChessPiece | null)[][]): { [key: string]: number } => {
+  const activity: { [key: string]: number } = {};
+  
+  for (let row = 0; row < 8; row++) {
+    for (let col = 0; col < 8; col++) {
+      const piece = board[row][col];
+      if (piece) {
+        const position = coordsToPosition(row, col);
+        const validMoves = getAllValidMoves(board, piece.color).filter(move => move.startsWith(position));
+        activity[position] = validMoves.length;
+      }
+    }
+  }
+  
+  return activity;
+};
+
+const evaluateKingSafety = (board: (ChessPiece | null)[][]): { white: number; black: number } => {
+  const safety = { white: 0, black: 0 };
+  
+  ['white', 'black'].forEach(color => {
+    const kingThreats = findCheckingPieces(board, color as PieceColor).length;
+    safety[color as 'white' | 'black'] = Math.max(0, 10 - kingThreats * 3);
+  });
+  
+  return safety;
+};
+
+const getControlledSquares = (board: (ChessPiece | null)[][]): { white: string[]; black: string[] } => {
+  const controlled = { white: [] as string[], black: [] as string[] };
+  
+  for (let row = 0; row < 8; row++) {
+    for (let col = 0; col < 8; col++) {
+      const piece = board[row][col];
+      if (piece) {
+        const position = coordsToPosition(row, col);
+        const moves = getAllValidMoves(board, piece.color).filter(move => move.startsWith(position));
+        moves.forEach(move => {
+          const [, to] = move.split('-');
+          controlled[piece.color].push(to);
+        });
+      }
+    }
+  }
+  
+  return controlled;
+};
+
+const canCastle = (board: (ChessPiece | null)[][], color: PieceColor, side: 'kingside' | 'queenside'): boolean => {
+  const row = color === 'white' ? 7 : 0;
+  const king = board[row][4];
+  
+  if (!king || king.type !== 'king' || king.hasMoved) return false;
+  
+  if (side === 'kingside') {
+    const rook = board[row][7];
+    if (!rook || rook.type !== 'rook' || rook.hasMoved) return false;
+    return !board[row][5] && !board[row][6];
+  } else {
+    const rook = board[row][0];
+    if (!rook || rook.type !== 'rook' || rook.hasMoved) return false;
+    return !board[row][1] && !board[row][2] && !board[row][3];
+  }
+};
+
+export const isCheckmate = (board: (ChessPiece | null)[][], color: PieceColor): boolean => {
+  if (!isInCheck(board, color)) return false;
+  return getAllValidMoves(board, color).length === 0;
+};
+
+export const isStalemate = (board: (ChessPiece | null)[][], color: PieceColor): boolean => {
+  if (isInCheck(board, color)) return false;
+  return getAllValidMoves(board, color).length === 0;
 };
