@@ -1,3 +1,4 @@
+
 import { ChessPiece, PieceColor, Move } from '@/types/chess';
 import { getAllValidMoves, positionToCoords, analyzeBoardState, isCheckmate, isStalemate } from './chessLogic';
 
@@ -33,89 +34,13 @@ export const getOpenAIMove = async (
       return { move: null, chatMessage: "It's a stalemate - the game is drawn!" };
     }
 
-    // Generate detailed board description
-    const detailedBoardState = generateDetailedBoardDescription(board, color);
-    const threatAnalysis = generateThreatAnalysis(board, color);
-    const strategicOpportunities = generateStrategicOpportunities(board, color, validMoves);
-    const tacticalThemes = analyzeTacticalThemes(board, color);
+    // Generate comprehensive prompt with detailed board state
+    const comprehensivePrompt = generateComprehensiveChessPrompt(
+      board, color, validMoves, boardAnalysis, opponentAnalysis, 
+      gamePhase, gameHistory, opponentName, currentAiName
+    );
 
-    // Enhanced system prompt with comprehensive chess knowledge
-    const systemPrompt = `You are a world-class chess grandmaster AI playing as ${color.toUpperCase()}. You have deep understanding of chess strategy, tactics, and endgames. You must analyze this position with the precision of a computer engine combined with the intuition of a human master.
-
-CRITICAL RULES:
-1. YOU ARE PLAYING AS ${color.toUpperCase()} - This is your color, make moves that benefit ${color}
-2. You MUST choose from the provided valid moves list - no exceptions
-3. Analyze threats, tactics, and strategy before deciding
-4. If your king is in check, you MUST prioritize escaping check
-5. Consider both immediate tactics and long-term strategic goals
-${!currentAiName ? '6. First, create a unique robot-like chess name for yourself (e.g., ChessBot-Alpha, DeepKnight-X1, TacticCore, etc.)' : `6. Your name is ${currentAiName}`}
-
-RESPOND WITH VALID JSON:
-{
-  ${!currentAiName ? '"aiName": "Your unique robot chess name",' : ''}
-  "move": "exact move from valid moves list (e.g., e2-e4)",
-  "chatMessage": "Brief tactical/strategic comment about your move"
-}`;
-
-    const positionPrompt = `
-=== COMPREHENSIVE POSITION ANALYSIS ===
-
-🎯 YOUR COLOR: ${color.toUpperCase()} (You are playing as ${color})
-📊 GAME PHASE: ${gamePhase}
-⏱️ MOVE COUNT: ${gameHistory.length}
-
-=== CURRENT BOARD STATE ===
-${detailedBoardState}
-
-=== CRITICAL TACTICAL INFORMATION ===
-${boardAnalysis.isInCheck ? 
-  `🚨 YOUR KING IS IN CHECK! 
-  - Checking pieces: ${boardAnalysis.checkingPieces.join(', ')}
-  - YOU MUST ESCAPE CHECK IMMEDIATELY
-  - Only moves that block check, capture checking piece, or move king are legal` :
-  '✅ Your king is safe (not in check)'}
-
-=== THREAT ANALYSIS ===
-${threatAnalysis}
-
-=== MATERIAL BALANCE ===
-Current material: ${boardAnalysis.materialBalance > 0 ? `+${boardAnalysis.materialBalance} for White` : boardAnalysis.materialBalance < 0 ? `${Math.abs(boardAnalysis.materialBalance)} for Black` : 'Equal material'}
-
-=== KING SAFETY EVALUATION ===
-- White King Safety: ${boardAnalysis.kingSafety.white}/10
-- Black King Safety: ${boardAnalysis.kingSafety.black}/10
-- Your King Safety: ${boardAnalysis.kingSafety[color]}/10
-
-=== TACTICAL THEMES DETECTED ===
-${tacticalThemes}
-
-=== STRATEGIC OPPORTUNITIES ===
-${strategicOpportunities}
-
-=== CASTLING RIGHTS ===
-${generateCastlingInfo(boardAnalysis)}
-
-=== RECENT GAME HISTORY ===
-Last 5 moves: ${gameMoves.slice(-5).join(' ') || 'Game start'}
-
-=== YOUR AVAILABLE MOVES ===
-${validMoves.length} legal moves: ${validMoves.join(', ')}
-
-=== STRATEGIC PRIORITIES FOR ${color.toUpperCase()} ===
-${getColorSpecificStrategy(color, gamePhase, boardAnalysis)}
-
-=== MOVE SELECTION CRITERIA ===
-1. ${boardAnalysis.isInCheck ? 'ESCAPE CHECK (mandatory priority)' : 'Look for checkmate opportunities'}
-2. ${boardAnalysis.isInCheck ? 'Find best way to escape while maintaining position' : 'Capture valuable pieces safely'}
-3. Improve piece coordination and activity
-4. Control key squares and important files
-5. Maintain king safety
-6. Consider pawn structure implications
-7. Look for tactical combinations (pins, forks, skewers, discoveries)
-
-Choose the move that a world champion would play in this position. Consider both tactical and positional factors.`;
-
-    console.log('📋 Sending enhanced board analysis to OpenAI:', {
+    console.log('🔍 Sending comprehensive chess analysis to OpenAI:', {
       yourColor: color,
       gamePhase,
       inCheck: boardAnalysis.isInCheck,
@@ -123,7 +48,8 @@ Choose the move that a world champion would play in this position. Consider both
       materialBalance: boardAnalysis.materialBalance,
       validMovesCount: validMoves.length,
       threatenedPieces: boardAnalysis.threatenedPieces.length,
-      kingSafety: boardAnalysis.kingSafety[color]
+      kingSafety: boardAnalysis.kingSafety[color],
+      promptLength: comprehensivePrompt.length
     });
     
     // For now, use enhanced simulation (replace with actual OpenAI API call)
@@ -203,49 +129,193 @@ Choose the move that a world champion would play in this position. Consider both
   }
 };
 
-const generateDetailedBoardDescription = (board: (ChessPiece | null)[][], color: PieceColor): string => {
+const generateComprehensiveChessPrompt = (
+  board: (ChessPiece | null)[][],
+  color: PieceColor,
+  validMoves: string[],
+  boardAnalysis: any,
+  opponentAnalysis: any,
+  gamePhase: string,
+  gameHistory: Move[],
+  opponentName: string,
+  currentAiName?: string
+): string => {
+  const detailedBoardState = generateDetailedBoardDescription(board);
+  const threatAnalysis = generateThreatAnalysis(board, color, boardAnalysis, opponentAnalysis);
+  const strategicOpportunities = generateStrategicOpportunities(board, color, validMoves);
+  const tacticalThemes = analyzeTacticalThemes(board, color, boardAnalysis);
+  const moveCategories = categorizeMoves(validMoves, board, color);
+
+  return `═══════════════════════════════════════════════════════
+🏆 CHESS GRANDMASTER AI - COMPREHENSIVE POSITION ANALYSIS
+═══════════════════════════════════════════════════════
+
+🎯 CRITICAL GAME INFORMATION:
+▸ YOU ARE PLAYING AS: ${color.toUpperCase()} PIECES
+▸ YOUR OPPONENT: ${opponentName} (playing ${color === 'white' ? 'BLACK' : 'WHITE'})
+▸ GAME PHASE: ${gamePhase.toUpperCase()}
+▸ MOVE NUMBER: ${Math.floor(gameHistory.length / 2) + 1}
+${!currentAiName ? '▸ FIRST MOVE: Create your unique chess AI name (e.g., GrandmasterBot-X1, TacticCore-Pro)' : `▸ YOUR AI NAME: ${currentAiName}`}
+
+🚨 IMMEDIATE TACTICAL SITUATION:
+${boardAnalysis.isInCheck ? 
+  `⚠️  YOUR KING IS IN CHECK! 
+  ▸ Checking pieces: ${boardAnalysis.checkingPieces.join(', ')}
+  ▸ YOU MUST ESCAPE CHECK IMMEDIATELY - THIS IS MANDATORY!
+  ▸ Legal responses: Block check, capture checking piece, or move king
+  ▸ Failure to escape check = ILLEGAL MOVE` :
+  '✅ Your king is SAFE (not in check)'}
+
+${opponentAnalysis.isInCheck ? 
+  `🎯 OPPONENT'S KING IS IN CHECK!
+  ▸ You are giving check - excellent tactical pressure!
+  ▸ Look for ways to maintain the attack or deliver checkmate` : ''}
+
+═══════════════════════════════════════════════════════
+📋 COMPLETE BOARD STATE ANALYSIS
+═══════════════════════════════════════════════════════
+
+${detailedBoardState}
+
+═══════════════════════════════════════════════════════
+⚡ THREAT & TACTICAL ANALYSIS
+═══════════════════════════════════════════════════════
+
+${threatAnalysis}
+
+═══════════════════════════════════════════════════════
+🎯 STRATEGIC OPPORTUNITIES & MOVE CATEGORIES
+═══════════════════════════════════════════════════════
+
+${strategicOpportunities}
+
+📊 AVAILABLE MOVES BY CATEGORY:
+${Object.entries(moveCategories).map(([category, moves]) => 
+  `▸ ${category}: ${moves.length > 0 ? moves.slice(0, 8).join(', ') + (moves.length > 8 ? '...' : '') : 'None'}`
+).join('\n')}
+
+═══════════════════════════════════════════════════════
+🧩 TACTICAL THEMES & PATTERNS
+═══════════════════════════════════════════════════════
+
+${tacticalThemes}
+
+═══════════════════════════════════════════════════════
+📈 POSITION EVALUATION
+═══════════════════════════════════════════════════════
+
+🏆 MATERIAL BALANCE: ${
+  boardAnalysis.materialBalance > 0 ? `+${boardAnalysis.materialBalance} for White` : 
+  boardAnalysis.materialBalance < 0 ? `${Math.abs(boardAnalysis.materialBalance)} for Black` : 
+  'Equal material'
+} ${boardAnalysis.materialBalance > 0 && color === 'white' ? '(YOU ARE AHEAD!)' : 
+     boardAnalysis.materialBalance < 0 && color === 'black' ? '(YOU ARE AHEAD!)' : 
+     boardAnalysis.materialBalance > 0 && color === 'black' ? '(YOU ARE BEHIND)' :
+     boardAnalysis.materialBalance < 0 && color === 'white' ? '(YOU ARE BEHIND)' : '(EQUAL)'}
+
+🛡️ KING SAFETY COMPARISON:
+▸ Your King (${color}): ${boardAnalysis.kingSafety[color]}/10 ${boardAnalysis.kingSafety[color] < 5 ? '⚠️ DANGER!' : '✅'}
+▸ Opponent King: ${boardAnalysis.kingSafety[color === 'white' ? 'black' : 'white']}/10
+
+🏰 CASTLING RIGHTS:
+▸ White: Kingside ${boardAnalysis.specialConditions?.canCastle?.white?.kingside ? '✅' : '❌'}, Queenside ${boardAnalysis.specialConditions?.canCastle?.white?.queenside ? '✅' : '❌'}
+▸ Black: Kingside ${boardAnalysis.specialConditions?.canCastle?.black?.kingside ? '✅' : '❌'}, Queenside ${boardAnalysis.specialConditions?.canCastle?.black?.queenside ? '✅' : '❌'}
+
+═══════════════════════════════════════════════════════
+🎯 STRATEGIC PRIORITIES FOR ${color.toUpperCase()}
+═══════════════════════════════════════════════════════
+
+${getColorSpecificStrategy(color, gamePhase, boardAnalysis)}
+
+═══════════════════════════════════════════════════════
+🎮 MOVE SELECTION INSTRUCTIONS
+═══════════════════════════════════════════════════════
+
+PRIORITY ORDER (FOLLOW STRICTLY):
+${boardAnalysis.isInCheck ? 
+  '1. 🚨 ESCAPE CHECK (Mandatory - you MUST get out of check!)' :
+  '1. 🎯 Look for CHECKMATE opportunities'
+}
+2. 🏆 Capture valuable pieces safely (especially if material advantage)
+3. ⚡ Create tactical threats (pins, forks, skewers, discoveries)
+4. 🎯 Improve piece activity and coordination
+5. 🏰 Ensure king safety and control key squares
+6. 📈 Consider long-term positional advantages
+
+GAME PHASE SPECIFIC GOALS (${gamePhase.toUpperCase()}):
+${getGamePhaseGuidelines(gamePhase, color, boardAnalysis)}
+
+═══════════════════════════════════════════════════════
+🤖 RESPONSE FORMAT (JSON ONLY)
+═══════════════════════════════════════════════════════
+
+You MUST respond with VALID JSON in this exact format:
+{
+  ${!currentAiName ? '"aiName": "Your unique chess AI name (e.g., TacticMaster-Pro, DeepKnight-X1)",' : ''}
+  "move": "exact_move_from_valid_list",
+  "chatMessage": "Brief tactical explanation (1-2 sentences)"
+}
+
+VALID MOVES TO CHOOSE FROM: ${validMoves.join(', ')}
+
+Remember: You are ${color.toUpperCase()}. Choose the move a world champion would play!`;
+};
+
+const generateDetailedBoardDescription = (board: (ChessPiece | null)[][]): string => {
   const description = [];
-  description.push('📋 PIECE POSITIONS:');
+  description.push('🏁 CURRENT PIECE POSITIONS:');
   
-  // Describe all pieces on the board
+  const whitePieces = [];
+  const blackPieces = [];
+  
   for (let row = 0; row < 8; row++) {
     for (let col = 0; col < 8; col++) {
       const piece = board[row][col];
       if (piece) {
         const position = `${String.fromCharCode(97 + col)}${8 - row}`;
-        const pieceDesc = `${piece.color} ${piece.type}`;
-        description.push(`  ${position}: ${pieceDesc}`);
+        const pieceDesc = `${piece.type} on ${position}`;
+        
+        if (piece.color === 'white') {
+          whitePieces.push(pieceDesc);
+        } else {
+          blackPieces.push(pieceDesc);
+        }
       }
     }
   }
   
+  description.push(`\n⚪ WHITE PIECES: ${whitePieces.join(', ')}`);
+  description.push(`⚫ BLACK PIECES: ${blackPieces.join(', ')}\n`);
+  
   return description.join('\n');
 };
 
-const generateThreatAnalysis = (board: (ChessPiece | null)[][], color: PieceColor): string => {
+const generateThreatAnalysis = (
+  board: (ChessPiece | null)[][], 
+  color: PieceColor, 
+  boardAnalysis: any, 
+  opponentAnalysis: any
+): string => {
   const analysis = [];
-  const boardAnalysis = analyzeBoardState(board, color);
   
-  analysis.push('⚡ THREAT ANALYSIS:');
+  analysis.push('⚔️ THREAT ANALYSIS:');
   
   if (boardAnalysis.threatenedPieces.length > 0) {
-    analysis.push('🎯 Your pieces under attack:');
+    analysis.push(`\n🎯 YOUR PIECES UNDER ATTACK:`);
     boardAnalysis.threatenedPieces.forEach(threat => {
-      analysis.push(`  - ${threat.piece}: threatened by ${threat.threats.join(', ')}`);
+      analysis.push(`  ▸ ${threat.piece} - threatened by: ${threat.threats.join(', ')}`);
     });
   } else {
-    analysis.push('✅ No immediate threats to your pieces');
+    analysis.push('\n✅ None of your pieces are under immediate attack');
   }
   
-  // Analyze opponent's threatened pieces
-  const opponentColor = color === 'white' ? 'black' : 'white';
-  const opponentAnalysis = analyzeBoardState(board, opponentColor);
-  
   if (opponentAnalysis.threatenedPieces.length > 0) {
-    analysis.push('🎯 Opponent pieces you can attack:');
+    analysis.push(`\n🎯 OPPONENT PIECES YOU CAN ATTACK:`);
     opponentAnalysis.threatenedPieces.forEach(threat => {
-      analysis.push(`  - ${threat.piece}: can be captured`);
+      analysis.push(`  ▸ ${threat.piece} - you can capture this piece!`);
     });
+  } else {
+    analysis.push('\n⚠️ No immediate capture opportunities available');
   }
   
   return analysis.join('\n');
@@ -253,7 +323,6 @@ const generateThreatAnalysis = (board: (ChessPiece | null)[][], color: PieceColo
 
 const generateStrategicOpportunities = (board: (ChessPiece | null)[][], color: PieceColor, validMoves: string[]): string => {
   const opportunities = [];
-  opportunities.push('🎯 STRATEGIC OPPORTUNITIES:');
   
   // Categorize moves
   const captures = validMoves.filter(move => {
@@ -262,20 +331,6 @@ const generateStrategicOpportunities = (board: (ChessPiece | null)[][], color: P
     return board[toRow][toCol] !== null;
   });
   
-  const checks = validMoves.filter(move => {
-    // This is simplified - in reality we'd simulate the move and check if it gives check
-    return Math.random() < 0.1; // Placeholder
-  });
-  
-  if (captures.length > 0) {
-    opportunities.push(`📈 ${captures.length} capture opportunities: ${captures.slice(0, 5).join(', ')}`);
-  }
-  
-  if (checks.length > 0) {
-    opportunities.push(`⚡ ${checks.length} checking moves available: ${checks.slice(0, 3).join(', ')}`);
-  }
-  
-  // Center control moves
   const centerMoves = validMoves.filter(move => {
     const [, to] = move.split('-');
     const file = to.charCodeAt(0) - 97;
@@ -283,63 +338,113 @@ const generateStrategicOpportunities = (board: (ChessPiece | null)[][], color: P
     return (file >= 2 && file <= 5) && (rank >= 3 && rank <= 6);
   });
   
+  opportunities.push('🎯 IMMEDIATE STRATEGIC OPPORTUNITIES:');
+  
+  if (captures.length > 0) {
+    opportunities.push(`\n📈 CAPTURE OPPORTUNITIES (${captures.length}): ${captures.slice(0, 5).join(', ')}`);
+  }
+  
   if (centerMoves.length > 0) {
-    opportunities.push(`🎯 ${centerMoves.length} center control moves: ${centerMoves.slice(0, 3).join(', ')}`);
+    opportunities.push(`🎯 CENTER CONTROL MOVES (${centerMoves.length}): ${centerMoves.slice(0, 5).join(', ')}`);
   }
   
   return opportunities.join('\n');
 };
 
-const analyzeTacticalThemes = (board: (ChessPiece | null)[][], color: PieceColor): string => {
+const analyzeTacticalThemes = (board: (ChessPiece | null)[][], color: PieceColor, boardAnalysis: any): string => {
   const themes = [];
-  themes.push('🧩 TACTICAL THEMES:');
-  
-  // This is a simplified analysis - in a real implementation, we'd have sophisticated tactical detection
-  themes.push('- Scanning for pins, forks, skewers, and discoveries...');
-  themes.push('- Analyzing piece coordination and weak squares...');
-  themes.push('- Checking for back-rank weaknesses...');
+  themes.push('🧩 TACTICAL PATTERN ANALYSIS:');
+  themes.push('▸ Scanning for pins, forks, skewers, and discovered attacks...');
+  themes.push('▸ Analyzing piece coordination and weak squares...');
+  themes.push('▸ Checking for back-rank weaknesses and mating patterns...');
+  themes.push('▸ Looking for piece sacrifice opportunities...');
   
   return themes.join('\n');
 };
 
-const generateCastlingInfo = (analysis: any): string => {
-  const info = [];
-  info.push('🏰 CASTLING STATUS:');
-  info.push(`White: Kingside ${analysis.specialConditions.canCastle.white.kingside ? '✅' : '❌'}, Queenside ${analysis.specialConditions.canCastle.white.queenside ? '✅' : '❌'}`);
-  info.push(`Black: Kingside ${analysis.specialConditions.canCastle.black.kingside ? '✅' : '❌'}, Queenside ${analysis.specialConditions.canCastle.black.queenside ? '✅' : '❌'}`);
-  return info.join('\n');
+const categorizeMoves = (validMoves: string[], board: (ChessPiece | null)[][], color: PieceColor) => {
+  const categories = {
+    'CAPTURES': [],
+    'CHECKS': [],
+    'CENTER_CONTROL': [],
+    'DEVELOPMENT': [],
+    'KING_SAFETY': [],
+    'OTHER': []
+  };
+  
+  validMoves.forEach(move => {
+    const [, to] = move.split('-');
+    const [toRow, toCol] = positionToCoords(to);
+    
+    // Categorize captures
+    if (board[toRow][toCol] !== null) {
+      categories.CAPTURES.push(move);
+      return;
+    }
+    
+    // Center control (simplified)
+    const file = to.charCodeAt(0) - 97;
+    const rank = parseInt(to[1]);
+    if ((file >= 2 && file <= 5) && (rank >= 3 && rank <= 6)) {
+      categories.CENTER_CONTROL.push(move);
+      return;
+    }
+    
+    categories.OTHER.push(move);
+  });
+  
+  return categories;
 };
 
 const getColorSpecificStrategy = (color: PieceColor, gamePhase: string, analysis: any): string => {
   const strategy = [];
-  strategy.push(`As ${color.toUpperCase()}, your priorities are:`);
   
   if (gamePhase === 'opening') {
-    strategy.push('1. Control the center (e4, d4, e5, d5)');
-    strategy.push('2. Develop pieces rapidly (knights before bishops)');
-    strategy.push('3. Ensure king safety (castle early)');
-    strategy.push('4. Connect rooks and improve piece coordination');
+    strategy.push('1. 🎯 Control the center with pawns (e4, d4, e5, d5)');
+    strategy.push('2. 🐎 Develop knights before bishops');
+    strategy.push('3. 🏰 Castle early for king safety');
+    strategy.push('4. 🔗 Connect rooks and improve coordination');
   } else if (gamePhase === 'middlegame') {
-    strategy.push('1. Look for tactical shots and combinations');
-    strategy.push('2. Improve piece activity and coordination');
-    strategy.push('3. Attack opponent weaknesses');
-    strategy.push('4. Control key squares and files');
+    strategy.push('1. ⚡ Look for tactical combinations');
+    strategy.push('2. 🎯 Improve piece activity and coordination');
+    strategy.push('3. 🎪 Attack opponent weaknesses');
+    strategy.push('4. 🏰 Control key squares and important files');
   } else {
-    strategy.push('1. Activate your king as a fighting piece');
-    strategy.push('2. Push passed pawns toward promotion');
-    strategy.push('3. Simplify when ahead in material');
-    strategy.push('4. Create and advance passed pawns');
+    strategy.push('1. 👑 Activate king as fighting piece');
+    strategy.push('2. 🏃 Push passed pawns toward promotion');
+    strategy.push('3. 🔄 Trade pieces when ahead in material');
+    strategy.push('4. 🎯 Create and advance passed pawns');
   }
   
-  if (analysis.materialBalance > 2 && color === 'white') {
-    strategy.push('5. You have material advantage - trade pieces to reach winning endgame');
-  } else if (analysis.materialBalance < -2 && color === 'black') {
-    strategy.push('5. You have material advantage - trade pieces to reach winning endgame');
-  } else if ((analysis.materialBalance < -2 && color === 'white') || (analysis.materialBalance > 2 && color === 'black')) {
-    strategy.push('5. You are behind in material - seek tactical complications');
+  // Material-based strategy adjustments
+  const materialAdv = color === 'white' ? analysis.materialBalance : -analysis.materialBalance;
+  if (materialAdv > 2) {
+    strategy.push('5. 💎 You have material advantage - simplify to winning endgame');
+  } else if (materialAdv < -2) {
+    strategy.push('5. ⚡ You are behind - seek tactical complications!');
   }
   
   return strategy.join('\n');
+};
+
+const getGamePhaseGuidelines = (gamePhase: string, color: PieceColor, analysis: any): string => {
+  const guidelines = [];
+  
+  if (gamePhase === 'opening') {
+    guidelines.push('▸ Rapid development over material gain');
+    guidelines.push('▸ Control center squares (e4, e5, d4, d5)');
+    guidelines.push('▸ Castle within first 10 moves if possible');
+  } else if (gamePhase === 'middlegame') {
+    guidelines.push('▸ Look for tactical shots and combinations');
+    guidelines.push('▸ Improve worst-placed piece');
+    guidelines.push('▸ Create and exploit weaknesses');
+  } else {
+    guidelines.push('▸ King becomes a strong piece - activate it');
+    guidelines.push('▸ Passed pawns are crucial - create and push them');
+    guidelines.push('▸ Calculate precisely - every move matters');
+  }
+  
+  return guidelines.join('\n');
 };
 
 const determineGamePhase = (moveCount: number, board: (ChessPiece | null)[][]): 'opening' | 'middlegame' | 'endgame' => {
@@ -360,43 +465,6 @@ const determineGamePhase = (moveCount: number, board: (ChessPiece | null)[][]): 
   if (moveCount < 20 && pieceCount > 24) return 'opening';
   if (pieceCount < 14 || majorPieces < 4) return 'endgame';
   return 'middlegame';
-};
-
-const getStrategicGuidelines = (phase: string, color: PieceColor, analysis: any): string => {
-  const guidelines = [];
-  
-  if (phase === 'opening') {
-    guidelines.push('- Control the center with pawns (e4, d4, e5, d5)');
-    guidelines.push('- Develop knights before bishops (Nf3, Nc3, Nf6, Nc6)');
-    guidelines.push('- Castle early for king safety');
-    guidelines.push('- Avoid moving the same piece twice without purpose');
-    guidelines.push('- Connect rooks and activate them');
-  } else if (phase === 'middlegame') {
-    guidelines.push('- Look for tactical combinations (pins, forks, skewers)');
-    guidelines.push('- Improve piece coordination and activity');
-    guidelines.push('- Control key squares, especially outposts');
-    guidelines.push('- Consider pawn breaks to open lines');
-    guidelines.push('- Attack weaknesses in opponent\'s position');
-  } else {
-    guidelines.push('- Activate the king as a fighting piece');
-    guidelines.push('- Push passed pawns aggressively');
-    guidelines.push('- Trade pieces when ahead in material');
-    guidelines.push('- Focus on pawn promotion threats');
-    guidelines.push('- Use king and pawn endgame principles');
-  }
-  
-  if (analysis.isInCheck) {
-    guidelines.unshift('- PRIORITY: Escape check immediately');
-  }
-  
-  if (analysis.materialBalance > 2) {
-    guidelines.push('- Trade pieces to reach winning endgame');
-  } else if (analysis.materialBalance < -2) {
-    guidelines.push('- Seek tactical complications and counterplay');
-    guidelines.push('- Avoid trades, keep pieces on the board');
-  }
-  
-  return guidelines.join('\n');
 };
 
 const simulateAdvancedOpenAIResponse = async (
@@ -444,12 +512,12 @@ const simulateAdvancedOpenAIResponse = async (
 const selectBestMove = (validMoves: string[], boardAnalysis: any, gamePhase: string): string => {
   // Priority 1: If in check, find moves that escape check
   if (boardAnalysis.isInCheck) {
-    return validMoves[0];
+    return validMoves[0]; // Simplified - would need to filter check-escaping moves
   }
   
   // Priority 2: Look for captures
   const captures = validMoves.filter(move => {
-    return Math.random() < 0.25;
+    return Math.random() < 0.25; // Simplified capture detection
   });
   
   if (captures.length > 0) {
@@ -467,17 +535,6 @@ const selectBestMove = (validMoves: string[], boardAnalysis: any, gamePhase: str
     
     if (centerMoves.length > 0) {
       return centerMoves[Math.floor(Math.random() * centerMoves.length)];
-    }
-  }
-  
-  // Priority 4: In endgame, prefer pawn advancement
-  if (gamePhase === 'endgame') {
-    const pawnMoves = validMoves.filter(move => {
-      return Math.random() < 0.4;
-    });
-    
-    if (pawnMoves.length > 0) {
-      return pawnMoves[Math.floor(Math.random() * pawnMoves.length)];
     }
   }
   

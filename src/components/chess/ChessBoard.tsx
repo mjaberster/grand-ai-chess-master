@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -207,7 +206,7 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
           </div>
         </div>
 
-        {/* Main Game Layout */}
+        {/* Main Game Layout - Board dominant with chat on the right */}
         <div className="flex gap-6">
           {/* Chess Board - Dominant component (70% width) */}
           <div className="flex-1 max-w-4xl">
