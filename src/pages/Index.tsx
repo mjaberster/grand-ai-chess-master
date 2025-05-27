@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import AuthPage from '@/components/auth/AuthPage';
+import Home from '@/components/Home';
 import GameSetup from '@/components/chess/GameSetup';
 import OpponentSelection from '@/components/chess/OpponentSelection';
 import ChessBoard from '@/components/chess/ChessBoard';
@@ -9,27 +10,32 @@ import AIvAIChessBoard from '@/components/chess/AIvAIChessBoard';
 import UserProfile from '@/components/chess/UserProfile';
 import { GameMode, PieceColor } from '@/types/chess';
 
-type GameState = 'menu' | 'opponent-selection' | 'playing' | 'profile';
+type GameState = 'home' | 'auth' | 'game-setup' | 'opponent-selection' | 'playing' | 'profile';
 type OpponentType = 'human' | 'gpt-4o' | 'claude' | 'gemini';
 
 const Index = () => {
   const { user } = useAuth();
-  const [gameState, setGameState] = useState<GameState>('menu');
+  const [gameState, setGameState] = useState<GameState>('home');
   const [gameMode, setGameMode] = useState<GameMode>('human-vs-ai');
   const [playerColor, setPlayerColor] = useState<PieceColor>('white');
   const [opponent1Type, setOpponent1Type] = useState<OpponentType>('human');
   const [opponent2Type, setOpponent2Type] = useState<OpponentType>('gpt-4o');
 
+  // If user is not logged in, show auth page
   if (!user) {
-    return <AuthPage onBack={() => {}} />;
+    return <AuthPage onBack={() => setGameState('home')} />;
   }
+
+  const handleStartGame = () => {
+    setGameState('game-setup');
+  };
 
   const handleGameModeSelect = (mode: GameMode) => {
     setGameMode(mode);
     setGameState('opponent-selection');
   };
 
-  const handleStartGame = (
+  const handleGameStart = (
     mode: GameMode, 
     opponent1: OpponentType, 
     opponent2: OpponentType, 
@@ -43,27 +49,35 @@ const Index = () => {
   };
 
   const handleEndGame = () => {
-    setGameState('menu');
+    setGameState('home');
   };
 
   const handleShowProfile = () => {
     setGameState('profile');
   };
 
-  const handleBackFromProfile = () => {
-    setGameState('menu');
+  const handleBackToHome = () => {
+    setGameState('home');
   };
 
-  const handleBackToMenu = () => {
-    setGameState('menu');
+  const handleBackToGameSetup = () => {
+    setGameState('game-setup');
   };
 
   switch (gameState) {
-    case 'menu':
+    case 'home':
+      return (
+        <Home 
+          onStartGame={handleStartGame}
+          onShowProfile={handleShowProfile}
+        />
+      );
+    
+    case 'game-setup':
       return (
         <GameSetup 
           onStartGame={handleGameModeSelect}
-          onBack={handleBackToMenu}
+          onBack={handleBackToHome}
           onShowProfile={handleShowProfile}
         />
       );
@@ -71,8 +85,8 @@ const Index = () => {
     case 'opponent-selection':
       return (
         <OpponentSelection 
-          onStartGame={handleStartGame}
-          onBack={handleBackToMenu}
+          onStartGame={handleGameStart}
+          onBack={handleBackToGameSetup}
         />
       );
     
@@ -96,14 +110,13 @@ const Index = () => {
     
     case 'profile':
       return (
-        <UserProfile onBack={handleBackFromProfile} />
+        <UserProfile onBack={handleBackToHome} />
       );
     
     default:
       return (
-        <GameSetup 
-          onStartGame={handleGameModeSelect}
-          onBack={handleBackToMenu}
+        <Home 
+          onStartGame={handleStartGame}
           onShowProfile={handleShowProfile}
         />
       );
