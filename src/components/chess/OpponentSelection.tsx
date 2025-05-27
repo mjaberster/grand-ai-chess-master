@@ -55,44 +55,6 @@ const OpponentSelection = ({ onStartGame, onBack }: OpponentSelectionProps) => {
     onStartGame(gameMode, opponent1, opponent2, gameMode === 'human-vs-ai' ? playerColor : undefined);
   };
 
-  const OpponentCard = ({ 
-    opponent, 
-    selected, 
-    onClick, 
-    title 
-  }: { 
-    opponent: OpponentType; 
-    selected: boolean; 
-    onClick: () => void; 
-    title: string;
-  }) => {
-    const oppData = opponents.find(o => o.id === opponent)!;
-    const Icon = oppData.icon;
-
-    return (
-      <div className="space-y-3">
-        <Label className="text-lg font-semibold text-white">{title}</Label>
-        <div className="grid grid-cols-2 gap-3">
-          {opponents.map((opp) => (
-            <Button
-              key={opp.id}
-              variant={selected === opp.id ? 'default' : 'outline'}
-              className={`h-20 flex-col space-y-2 ${
-                selected === opp.id
-                  ? `bg-gradient-to-r ${opp.color} text-white hover:opacity-90`
-                  : 'border-slate-600 text-slate-300 hover:bg-slate-700'
-              }`}
-              onClick={() => onClick()}
-            >
-              <Icon className="w-6 h-6" />
-              <span className="text-sm font-medium">{opp.name}</span>
-            </Button>
-          ))}
-        </div>
-      </div>
-    );
-  };
-
   const humanInvolved = opponent1 === 'human' || opponent2 === 'human';
 
   return (
@@ -111,29 +73,25 @@ const OpponentSelection = ({ onStartGame, onBack }: OpponentSelectionProps) => {
           </div>
 
           <div className="space-y-8">
-            <OpponentCard
-              opponent={opponent1}
-              selected={opponent1}
-              onClick={() => {}}
-              title="First Opponent"
-            />
-
-            <div className="grid grid-cols-4 gap-3">
-              {opponents.map((opp) => (
-                <Button
-                  key={`opp1-${opp.id}`}
-                  variant={opponent1 === opp.id ? 'default' : 'outline'}
-                  className={`h-16 flex-col space-y-1 ${
-                    opponent1 === opp.id
-                      ? `bg-gradient-to-r ${opp.color} text-white`
-                      : 'border-slate-600 text-slate-300 hover:bg-slate-700'
-                  }`}
-                  onClick={() => setOpponent1(opp.id)}
-                >
-                  <opp.icon className="w-5 h-5" />
-                  <span className="text-xs">{opp.name}</span>
-                </Button>
-              ))}
+            <div className="space-y-3">
+              <Label className="text-lg font-semibold text-white">First Opponent</Label>
+              <div className="grid grid-cols-4 gap-3">
+                {opponents.map((opp) => (
+                  <Button
+                    key={`opp1-${opp.id}`}
+                    variant={opponent1 === opp.id ? 'default' : 'outline'}
+                    className={`h-16 flex-col space-y-1 ${
+                      opponent1 === opp.id
+                        ? `bg-gradient-to-r ${opp.color} text-white`
+                        : 'border-slate-600 text-slate-300 hover:bg-slate-700'
+                    }`}
+                    onClick={() => setOpponent1(opp.id)}
+                  >
+                    <opp.icon className="w-5 h-5" />
+                    <span className="text-xs">{opp.name}</span>
+                  </Button>
+                ))}
+              </div>
             </div>
 
             <div className="space-y-3">
