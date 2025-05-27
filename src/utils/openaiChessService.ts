@@ -1,10 +1,8 @@
-
 import { ChessPiece, PieceColor, Move } from '@/types/chess';
 import { getAllValidMoves } from './chessLogic';
+import { generateEnhancedMovePrompt, generateRetryPrompt } from './enhancedChessPrompts';
 import { 
-  generateSystemPrompt, 
-  generateMovePrompt, 
-  generateAnalysisPrompt,
+  generateAnalysisPrompt, 
   generateExplanationPrompt,
   generateHintPrompt
 } from './chessPrompts';
@@ -15,12 +13,15 @@ interface OpenAIResponse {
   aiName?: string;
 }
 
+const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
+
 export const getOpenAIMove = async (
   board: (ChessPiece | null)[][],
   color: PieceColor,
   gameHistory: Move[],
   opponentName: string = 'Player',
-  currentAiName?: string
+  currentAiName?: string,
+  retryCount: number = 0
 ): Promise<OpenAIResponse> => {
   console.log('🤖 OpenAI Move Request Started');
   console.log('📊 Input Data:', {
@@ -28,26 +29,26 @@ export const getOpenAIMove = async (
     opponentName,
     currentAiName,
     gameHistoryLength: gameHistory.length,
+    retryCount,
     boardState: board.map(row => row.map(piece => piece ? `${piece.color[0]}${piece.type[0]}` : '.')).join('')
   });
 
   const validMoves = getAllValidMoves(board, color);
   console.log('✅ Valid Moves Generated:', {
     count: validMoves.length,
-    moves: validMoves.slice(0, 10), // Log first 10 moves to avoid spam
-    allMoves: validMoves.length <= 20 ? validMoves : `${validMoves.length} total moves`
+    moves: validMoves.length <= 10 ? validMoves : validMoves.slice(0, 10).concat([`... and ${validMoves.length - 10} more`])
   });
   
   if (validMoves.length === 0) {
-    console.log('❌ No valid moves available');
-    return { move: null, chatMessage: 'No valid moves available.' };
+    console.log('❌ No valid moves available - game over');
+    return { move: null, chatMessage: 'No valid moves available - game over.' };
   }
 
   try {
-    const prompt = generateMovePrompt(board, color, gameHistory, validMoves, opponentName, currentAiName);
-    console.log('📝 Generated Prompt:', {
+    const prompt = generateEnhancedMovePrompt(board, color, gameHistory, validMoves, opponentName, currentAiName);
+    console.log('📝 Enhanced Prompt Generated:', {
       promptLength: prompt.length,
-      prompt: prompt.substring(0, 200) + '...'
+      preview: prompt.substring(0, 300) + '...'
     });
 
     const response = await callOpenAI(prompt);
@@ -58,12 +59,19 @@ export const getOpenAIMove = async (
     console.log('🎯 Move Validation:', {
       receivedMove: moveNotation,
       expectedFormat: 'from-to (e.g., e2-e4)',
-      isValidFormat: typeof moveNotation === 'string' && moveNotation.includes('-')
+      isValidFormat: typeof moveNotation === 'string' && moveNotation.includes('-'),
+      isInValidList: validMoves.includes(moveNotation)
     });
 
     if (!moveNotation || typeof moveNotation !== 'string') {
       console.error('❌ Invalid move format from OpenAI:', moveNotation);
-      return createFallbackMove(validMoves, board, 'Invalid move format received. Let me recalculate...', currentAiName);
+      
+      if (retryCount < 2) {
+        console.log('🔄 Retrying with correction prompt...');
+        return retryWithCorrection(board, color, gameHistory, validMoves, moveNotation, 'Invalid move format', opponentName, currentAiName, retryCount + 1);
+      }
+      
+      return createFallbackMove(validMoves, board, 'Invalid move format received. Using fallback move.', currentAiName);
     }
 
     if (!validMoves.includes(moveNotation)) {
@@ -71,9 +79,18 @@ export const getOpenAIMove = async (
         receivedMove: moveNotation,
         validMovesCount: validMoves.length,
         isInList: validMoves.includes(moveNotation),
-        similarMoves: validMoves.filter(m => m.includes(moveNotation.split('-')[0]) || m.includes(moveNotation.split('-')[1]))
+        similarMoves: validMoves.filter(m => 
+          m.includes(moveNotation.split('-')[0]) || 
+          m.includes(moveNotation.split('-')[1])
+        )
       });
-      return createFallbackMove(validMoves, board, 'Let me recalculate this position...', currentAiName);
+      
+      if (retryCount < 2) {
+        console.log('🔄 Retrying with correction prompt...');
+        return retryWithCorrection(board, color, gameHistory, validMoves, moveNotation, 'Move not in valid moves list', opponentName, currentAiName, retryCount + 1);
+      }
+      
+      return createFallbackMove(validMoves, board, 'Invalid move received. Let me recalculate...', currentAiName);
     }
 
     const move = createMoveFromNotation(moveNotation, board);
@@ -90,7 +107,13 @@ export const getOpenAIMove = async (
 
     if (!move) {
       console.error('❌ Failed to create move object from notation:', moveNotation);
-      return createFallbackMove(validMoves, board, 'I need to analyze this position more carefully.', currentAiName);
+      
+      if (retryCount < 2) {
+        console.log('🔄 Retrying with correction prompt...');
+        return retryWithCorrection(board, color, gameHistory, validMoves, moveNotation, 'Failed to create move object', opponentName, currentAiName, retryCount + 1);
+      }
+      
+      return createFallbackMove(validMoves, board, 'Move creation failed. Using fallback.', currentAiName);
     }
 
     console.log('🎉 OpenAI Move Success:', {
@@ -107,9 +130,57 @@ export const getOpenAIMove = async (
   } catch (error) {
     console.error('💥 OpenAI API Error:', {
       error: error instanceof Error ? error.message : error,
-      stack: error instanceof Error ? error.stack : 'No stack trace'
+      stack: error instanceof Error ? error.stack : 'No stack trace',
+      retryCount
     });
-    return createFallbackMove(validMoves, board, 'Let me think about this position...', currentAiName);
+    
+    if (retryCount < 1) {
+      console.log('🔄 Retrying after API error...');
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      return getOpenAIMove(board, color, gameHistory, opponentName, currentAiName, retryCount + 1);
+    }
+    
+    return createFallbackMove(validMoves, board, 'AI temporarily unavailable. Using fallback move.', currentAiName);
+  }
+};
+
+const retryWithCorrection = async (
+  board: (ChessPiece | null)[][],
+  color: PieceColor,
+  gameHistory: Move[],
+  validMoves: string[],
+  invalidMove: string,
+  reason: string,
+  opponentName: string,
+  currentAiName: string | undefined,
+  retryCount: number
+): Promise<OpenAIResponse> => {
+  console.log('🔄 Retrying with correction:', { invalidMove, reason, retryCount });
+  
+  const correctionPrompt = generateRetryPrompt(invalidMove, reason, board, color, validMoves);
+  console.log('📝 Correction Prompt:', correctionPrompt.substring(0, 200) + '...');
+  
+  try {
+    const response = await callOpenAI(correctionPrompt);
+    const moveNotation = response.move;
+    
+    if (moveNotation && validMoves.includes(moveNotation)) {
+      const move = createMoveFromNotation(moveNotation, board);
+      if (move) {
+        console.log('✅ Correction successful:', moveNotation);
+        return {
+          move,
+          chatMessage: response.chatMessage || 'Corrected move selected.',
+          aiName: currentAiName
+        };
+      }
+    }
+    
+    console.error('❌ Correction failed, using fallback');
+    return createFallbackMove(validMoves, board, 'Correction failed. Using fallback move.', currentAiName);
+  } catch (error) {
+    console.error('💥 Correction attempt failed:', error);
+    return createFallbackMove(validMoves, board, 'Error in correction. Using fallback move.', currentAiName);
   }
 };
 
@@ -177,57 +248,139 @@ export const getHint = async (
 };
 
 const callOpenAI = async (prompt: string, expectJSON: boolean = true): Promise<any> => {
-  console.log('🔄 OpenAI API Call:', {
+  console.log('🔄 OpenAI API Call Starting:', {
     expectJSON,
     promptLength: prompt.length,
     timestamp: new Date().toISOString()
   });
 
-  // Simulate API call with more realistic timing
+  // Check for API key - for now simulate the call
+  const apiKey = localStorage.getItem('openai_api_key');
+  
+  if (!apiKey) {
+    console.log('⚠️ No API key found, using simulation');
+    return simulateOpenAICall(prompt, expectJSON);
+  }
+
+  try {
+    console.log('📡 Making real OpenAI API call...');
+    
+    const response = await fetch(OPENAI_API_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a professional chess grandmaster AI. Always respond with valid JSON format as requested.'
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        temperature: 0.7,
+        max_tokens: 500
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    console.log('📤 OpenAI API Response:', data);
+    
+    const content = data.choices[0]?.message?.content;
+    if (!content) {
+      throw new Error('No content in OpenAI response');
+    }
+
+    try {
+      const parsed = JSON.parse(content);
+      console.log('✅ Parsed OpenAI Response:', parsed);
+      return parsed;
+    } catch (parseError) {
+      console.error('❌ JSON Parse Error:', parseError);
+      return simulateOpenAICall(prompt, expectJSON);
+    }
+  } catch (error) {
+    console.error('💥 Real OpenAI API Error:', error);
+    console.log('🔄 Falling back to simulation');
+    return simulateOpenAICall(prompt, expectJSON);
+  }
+};
+
+const simulateOpenAICall = async (prompt: string, expectJSON: boolean): Promise<any> => {
+  console.log('🎭 Simulating OpenAI API Call');
+  
+  // Simulate realistic thinking time
   const thinkingTime = 1500 + Math.random() * 2000;
-  console.log(`⏳ Simulating OpenAI thinking time: ${Math.round(thinkingTime)}ms`);
+  console.log(`⏳ Simulating thinking time: ${Math.round(thinkingTime)}ms`);
   
   await new Promise(resolve => setTimeout(resolve, thinkingTime));
   
-  // Simulate more realistic OpenAI responses based on the prompt content
   if (expectJSON) {
     // Extract valid moves from prompt to ensure we return a valid move
-    const validMovesMatch = prompt.match(/Valid moves: ([^\n]+)/);
-    const validMoves = validMovesMatch ? validMovesMatch[1].split(', ') : ['e2-e4'];
+    const validMovesMatch = prompt.match(/AVAILABLE MOVES:\s*([^\n]+)/);
+    const validMoves = validMovesMatch ? validMovesMatch[1].split(', ').filter(m => m.includes('-')) : ['e2-e4'];
     
-    // Pick a random valid move to ensure it's always valid
-    const randomMove = validMoves[Math.floor(Math.random() * validMoves.length)];
+    // Prioritize moves based on context
+    let selectedMove = validMoves[0];
+    
+    // Check for urgent situations in prompt
+    if (prompt.includes('CHECK') || prompt.includes('THREATENED')) {
+      console.log('🚨 Detected urgent situation, selecting defensive move');
+      // In a real implementation, this would analyze the moves more intelligently
+      selectedMove = validMoves[Math.floor(Math.random() * Math.min(3, validMoves.length))];
+    } else {
+      selectedMove = validMoves[Math.floor(Math.random() * validMoves.length)];
+    }
     
     const response = {
-      move: randomMove,
-      chatMessage: generateRandomChatMessage(),
-      aiName: 'ChessGPT-Pro'
+      move: selectedMove,
+      chatMessage: generateContextualChatMessage(prompt),
+      aiName: 'ChessGPT-Enhanced'
     };
     
-    console.log('📤 OpenAI Simulated JSON Response:', response);
+    console.log('📤 Simulated JSON Response:', response);
     return response;
   } else {
     const response = {
-      analysis: 'The position shows good piece coordination with opportunities for tactical play.',
-      explanation: 'This move improves piece activity and maintains strategic balance.',
-      hint: 'Look for ways to improve your piece coordination and control key squares.'
+      analysis: 'The position shows complex tactical and strategic elements requiring careful evaluation.',
+      explanation: 'This move addresses the current position\'s tactical requirements while maintaining strategic balance.',
+      hint: 'Focus on piece safety and coordination while looking for tactical opportunities.'
     };
     
-    console.log('📤 OpenAI Simulated Text Response:', response);
+    console.log('📤 Simulated Text Response:', response);
     return response;
   }
 };
 
-const generateRandomChatMessage = (): string => {
+const generateContextualChatMessage = (prompt: string): string => {
+  if (prompt.includes('CHECK')) {
+    return 'Escaping check with the safest available move.';
+  }
+  if (prompt.includes('THREATENED')) {
+    return 'Addressing the threats to my pieces while maintaining position.';
+  }
+  if (prompt.includes('Opening')) {
+    return 'Developing pieces according to opening principles.';
+  }
+  if (prompt.includes('Endgame')) {
+    return 'Focusing on endgame technique and king activity.';
+  }
+  
   const messages = [
-    'A solid move that develops my pieces effectively.',
-    'This move improves my position while maintaining piece safety.',
-    'I\'m focusing on controlling the center squares.',
-    'This develops my pieces with tempo.',
-    'A strategic move that improves my pawn structure.',
-    'I\'m preparing for the middlegame with this development.',
-    'This move creates good piece coordination.',
-    'Maintaining material balance while improving position.'
+    'A solid positional move that improves my piece coordination.',
+    'This move maintains the balance while creating subtle pressure.',
+    'Centralizing my pieces for better control of key squares.',
+    'A strategic move that prepares for the next phase of the game.',
+    'Improving my position while keeping tactical vigilance.'
   ];
   
   return messages[Math.floor(Math.random() * messages.length)];

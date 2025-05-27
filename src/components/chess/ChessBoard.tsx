@@ -48,17 +48,33 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
   }, [currentPlayer, gameMode, playerColor]);
 
   const handleAIMove = async () => {
+    console.log('🤖 AI Move Handler Started:', {
+      gameMode,
+      currentPlayer,
+      playerColor,
+      moveCount: gameHistory.length
+    });
+    
     setIsThinking(true);
     try {
       let aiMove;
       let chatMessage = '';
 
       if (gameMode === 'human-vs-ai') {
+        console.log('🎯 Using Enhanced OpenAI Service');
         const result = await getOpenAIMove(board, currentPlayer, gameHistory, 'Player', aiName);
         aiMove = result.move;
         chatMessage = result.chatMessage;
         
+        console.log('📤 OpenAI Result:', {
+          moveNotation: aiMove?.notation,
+          hasMove: !!aiMove,
+          chatMessage,
+          aiNameChanged: result.aiName !== aiName
+        });
+        
         if (result.aiName && !aiName) {
+          console.log('🏷️ Setting AI name:', result.aiName);
           setAiName(result.aiName);
         }
         
@@ -70,21 +86,43 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
             timestamp: Date.now()
           };
           setChatMessages(prev => [...prev, newChatMessage]);
+          console.log('💬 Added chat message:', chatMessage);
         }
       } else {
+        console.log('🎯 Using Basic AI Service for AI vs AI');
         aiMove = await getAIMove(board, currentPlayer, gameHistory);
       }
 
       if (aiMove) {
+        console.log('✅ AI Move Execution:', {
+          from: aiMove.from,
+          to: aiMove.to,
+          piece: `${aiMove.piece.color} ${aiMove.piece.type}`,
+          captured: aiMove.captured ? `${aiMove.captured.color} ${aiMove.captured.type}` : 'none'
+        });
+        
         const newBoard = makeMove(board, aiMove.from, aiMove.to);
         setBoard(newBoard);
         setGameHistory(prev => [...prev, aiMove]);
         setCurrentPlayer(currentPlayer === 'white' ? 'black' : 'white');
+        
+        console.log('🔄 Board state updated, switching to:', currentPlayer === 'white' ? 'black' : 'white');
+      } else {
+        console.error('❌ No AI move generated');
       }
     } catch (error) {
-      console.error('AI move failed:', error);
+      console.error('💥 AI move failed:', {
+        error: error instanceof Error ? error.message : error,
+        stack: error instanceof Error ? error.stack : 'No stack trace',
+        gameState: {
+          currentPlayer,
+          moveCount: gameHistory.length,
+          gameMode
+        }
+      });
     } finally {
       setIsThinking(false);
+      console.log('🏁 AI move handler completed');
     }
   };
 
@@ -286,7 +324,7 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
                   <div className={`w-3 h-3 rounded-full mr-3 ${
                     currentPlayer === 'white' ? 'bg-white border-2 border-slate-400' : 'bg-slate-900'
                   }`} />
-                  {isThinking ? `${aiName || 'AI'} is thinking...` : `${currentPlayer === 'white' ? 'White' : 'Black'} to move`}
+                  {isThinking ? `${aiName || 'AI'} is analyzing position...` : `${currentPlayer === 'white' ? 'White' : 'Black'} to move`}
                 </div>
               </div>
             </Card>
