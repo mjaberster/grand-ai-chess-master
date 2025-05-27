@@ -59,7 +59,6 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
         aiMove = result.move;
         chatMessage = result.chatMessage;
         
-        // Set AI name if it's the first interaction
         if (result.aiName && !aiName) {
           setAiName(result.aiName);
         }
@@ -180,7 +179,7 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
 
   return (
     <div className="min-h-screen p-4">
-      <div className="max-w-6xl mx-auto">
+      <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <Button 
@@ -208,12 +207,13 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
           </div>
         </div>
 
-        <div className="flex flex-col lg:flex-row gap-6">
-          {/* Main Chess Board - Takes dominant space */}
+        {/* Main Game Layout */}
+        <div className="flex gap-6">
+          {/* Chess Board - Dominant component (70% width) */}
           <div className="flex-1 max-w-4xl">
             <Card className="bg-slate-800/50 border-slate-700 backdrop-blur-sm p-6">
               <div className="max-w-3xl mx-auto">
-                {/* Board with coordinates using CSS Grid */}
+                {/* Board with coordinates */}
                 <div className="inline-block">
                   <div className="grid grid-cols-10 grid-rows-10 gap-0 aspect-square border-4 border-amber-400 rounded-lg overflow-hidden">
                     {/* Top-left corner (empty) */}
@@ -293,29 +293,29 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
             </Card>
           </div>
 
-          {/* Side Panel */}
-          <div className="w-full lg:w-80">
-            <GameInfo 
-              gameMode={gameMode}
-              currentPlayer={currentPlayer}
-              gameHistory={gameHistory}
-              isThinking={isThinking}
-              aiName={aiName}
-            />
-          </div>
+          {/* Chat Panel - Right side (30% width) */}
+          {gameMode === 'human-vs-ai' && (
+            <div className="w-80 flex-shrink-0">
+              <ChatBox 
+                messages={chatMessages}
+                onSendMessage={handleSendMessage}
+                aiName={aiName}
+              />
+            </div>
+          )}
         </div>
 
-        {/* Bottom Section - Chat and Move History */}
-        {gameMode === 'human-vs-ai' && (
-          <div className="mt-6 grid md:grid-cols-2 gap-6">
-            <ChatBox 
-              messages={chatMessages}
-              onSendMessage={handleSendMessage}
-              aiName={aiName}
-            />
-            <MoveHistory gameHistory={gameHistory} />
-          </div>
-        )}
+        {/* Bottom Components - Game Info and Move History */}
+        <div className="mt-6 grid md:grid-cols-2 gap-6">
+          <GameInfo 
+            gameMode={gameMode}
+            currentPlayer={currentPlayer}
+            gameHistory={gameHistory}
+            isThinking={isThinking}
+            aiName={aiName}
+          />
+          <MoveHistory gameHistory={gameHistory} />
+        </div>
       </div>
     </div>
   );
