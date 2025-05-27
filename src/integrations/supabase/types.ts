@@ -57,6 +57,62 @@ export type Database = {
         }
         Relationships: []
       }
+      games: {
+        Row: {
+          created_at: string
+          duration_seconds: number | null
+          finished_at: string | null
+          game_data: Json | null
+          game_mode: string
+          id: string
+          moves_count: number | null
+          opponent1_type: string
+          opponent2_type: string
+          player_color: string | null
+          result: string | null
+          user_id: string | null
+          winner: string | null
+        }
+        Insert: {
+          created_at?: string
+          duration_seconds?: number | null
+          finished_at?: string | null
+          game_data?: Json | null
+          game_mode: string
+          id?: string
+          moves_count?: number | null
+          opponent1_type: string
+          opponent2_type: string
+          player_color?: string | null
+          result?: string | null
+          user_id?: string | null
+          winner?: string | null
+        }
+        Update: {
+          created_at?: string
+          duration_seconds?: number | null
+          finished_at?: string | null
+          game_data?: Json | null
+          game_mode?: string
+          id?: string
+          moves_count?: number | null
+          opponent1_type?: string
+          opponent2_type?: string
+          player_color?: string | null
+          result?: string | null
+          user_id?: string | null
+          winner?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "games_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       knowledge_base_files: {
         Row: {
           content_type: string | null
@@ -93,6 +149,30 @@ export type Database = {
           type?: string
           updated_at?: string | null
           url?: string | null
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          email: string | null
+          id: string
+          updated_at: string
+          username: string | null
+        }
+        Insert: {
+          created_at?: string
+          email?: string | null
+          id: string
+          updated_at?: string
+          username?: string | null
+        }
+        Update: {
+          created_at?: string
+          email?: string | null
+          id?: string
+          updated_at?: string
+          username?: string | null
         }
         Relationships: []
       }
@@ -354,6 +434,53 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: []
+      }
+      user_stats: {
+        Row: {
+          created_at: string
+          current_score: number | null
+          draws: number | null
+          games_played: number | null
+          high_score: number | null
+          id: string
+          losses: number | null
+          updated_at: string
+          user_id: string
+          wins: number | null
+        }
+        Insert: {
+          created_at?: string
+          current_score?: number | null
+          draws?: number | null
+          games_played?: number | null
+          high_score?: number | null
+          id?: string
+          losses?: number | null
+          updated_at?: string
+          user_id: string
+          wins?: number | null
+        }
+        Update: {
+          created_at?: string
+          current_score?: number | null
+          draws?: number | null
+          games_played?: number | null
+          high_score?: number | null
+          id?: string
+          losses?: number | null
+          updated_at?: string
+          user_id?: string
+          wins?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_stats_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
