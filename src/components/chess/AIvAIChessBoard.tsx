@@ -1,11 +1,10 @@
-
 import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Play, Pause, RotateCcw, Clock, Brain, Zap } from 'lucide-react';
 import { ChessPiece, PieceColor, Move } from '@/types/chess';
 import ChessSquare from './ChessSquare';
-import { initializeBoard, makeMove } from '@/utils/chessLogic';
+import { initializeBoard, makeMove, makeMoveWithPromotion } from '@/utils/chessLogic';
 import { validateGameState } from '@/utils/chessRuleEnforcement';
 import { AIPlayer, getRandomAIPlayer, getAIPlayerMove, AIBattleResult } from '@/utils/aiPlayerManager';
 
@@ -115,16 +114,30 @@ const AIvAIChessBoard = ({ onEndGame }: AIvAIChessBoardProps) => {
       const result = await getAIPlayerMove(currentAI, board, currentPlayer, gameHistory, opponent);
       
       if (result.move) {
-        const newBoard = makeMove(board, result.move.from, result.move.to);
+        // Handle move execution with potential promotion
+        let newBoard: (ChessPiece | null)[][];
+        
+        if (result.promotionPiece) {
+          console.log(`👑 Executing promotion move: ${result.move.notation} -> ${result.promotionPiece}`);
+          newBoard = makeMoveWithPromotion(board, result.move.from, result.move.to, result.promotionPiece);
+        } else {
+          newBoard = makeMove(board, result.move.from, result.move.to);
+        }
+        
         setBoard(newBoard);
         setGameHistory(prev => [...prev, result.move!]);
         setLastMoveResult(result);
         
-        // Add move commentary
+        // Enhanced move commentary with promotion info
+        let moveMessage = `${currentAI.avatar} ${result.analysis}`;
+        if (result.promotionPiece) {
+          moveMessage += ` 👑`;
+        }
+        
         const moveCommentary: BattleCommentary = {
           id: Date.now().toString(),
           timestamp: Date.now(),
-          message: `${currentAI.avatar} ${result.analysis}`,
+          message: moveMessage,
           type: 'move',
           player: currentAI
         };

@@ -1,8 +1,8 @@
-
-import { ChessPiece, PieceColor, Move } from '@/types/chess';
+import { ChessPiece, PieceColor, Move, PieceType } from '@/types/chess';
 import { getOpenAIMove } from './openaiChessService';
 import { getAIMove } from './aiService';
 import { getAllLegalMoves, validateGameState } from './chessRuleEnforcement';
+import { isPawnPromotion } from './chessLogic';
 
 export interface AIPlayer {
   id: string;
@@ -22,6 +22,7 @@ export interface AIBattleResult {
   evaluation: number;
   thinkingTime: number;
   moveQuality: 'excellent' | 'good' | 'average' | 'poor' | 'blunder';
+  promotionPiece?: PieceType;
 }
 
 const AI_PLAYERS: AIPlayer[] = [
@@ -102,6 +103,7 @@ export const getAIPlayerMove = async (
   
   let move: Move | null = null;
   let analysis = '';
+  let promotionPiece: PieceType | undefined = undefined;
   
   try {
     if (player.useOpenAI) {
@@ -113,16 +115,33 @@ export const getAIPlayerMove = async (
         player.name
       );
       move = result.move;
+      promotionPiece = result.promotionPiece;
       analysis = result.chatMessage || generatePersonalityAnalysis(player, board, color);
     } else {
       move = await getAIMove(board, color, gameHistory);
       analysis = generatePersonalityAnalysis(player, board, color);
+    }
+    
+    // Check if the move requires promotion and we don't have one yet
+    if (move && isPawnPromotion(move.from, move.to, move.piece) && !promotionPiece) {
+      promotionPiece = selectAIPromotionPiece(player, board, move.to);
+      console.log(`👑 ${player.name} auto-promoting to ${promotionPiece}`);
+      
+      // Update analysis to mention promotion
+      const promotionMessage = getPromotionMessage(player, promotionPiece);
+      analysis = `${analysis} ${promotionMessage}`;
     }
   } catch (error) {
     console.error(`❌ ${player.name} move generation failed:`, error);
     // Fallback to basic AI
     move = await getAIMove(board, color, gameHistory);
     analysis = `${player.name} had to use backup thinking due to technical issues.`;
+    
+    // Check for promotion in fallback move too
+    if (move && isPawnPromotion(move.from, move.to, move.piece)) {
+      promotionPiece = selectAIPromotionPiece(player, board, move.to);
+      analysis = `${analysis} Promoting to ${promotionPiece}.`;
+    }
   }
   
   const thinkingTime = Date.now() - startTime;
@@ -131,6 +150,7 @@ export const getAIPlayerMove = async (
   
   console.log(`✅ ${player.name} selected move:`, {
     move: move?.notation,
+    promotionPiece,
     thinkingTime,
     evaluation,
     quality: moveQuality
@@ -141,8 +161,50 @@ export const getAIPlayerMove = async (
     analysis,
     evaluation,
     thinkingTime,
-    moveQuality
+    moveQuality,
+    promotionPiece
   };
+};
+
+const selectAIPromotionPiece = (player: AIPlayer, board: (ChessPiece | null)[][], promotionSquare: string): PieceType => {
+  // AI personality-based promotion choice
+  switch (player.personality) {
+    case 'aggressive':
+      // Aggressive players prefer Queen for maximum attacking power
+      return 'queen';
+    
+    case 'tactical':
+      // Tactical players might choose based on position
+      // For now, default to Queen but could be enhanced with position analysis
+      return Math.random() < 0.9 ? 'queen' : 'knight';
+    
+    case 'defensive':
+      // Defensive players prefer solid pieces
+      return Math.random() < 0.8 ? 'queen' : 'rook';
+    
+    case 'balanced':
+    default:
+      // Balanced players almost always choose Queen
+      return Math.random() < 0.95 ? 'queen' : 'rook';
+  }
+};
+
+const getPromotionMessage = (player: AIPlayer, promotionPiece: PieceType): string => {
+  const pieceNames = {
+    queen: 'Queen',
+    rook: 'Rook',
+    bishop: 'Bishop',
+    knight: 'Knight'
+  };
+  
+  const messages = {
+    aggressive: `Promoting to ${pieceNames[promotionPiece]} for maximum firepower!`,
+    tactical: `${pieceNames[promotionPiece]} promotion creates the most tactical opportunities!`,
+    defensive: `Solid ${pieceNames[promotionPiece]} promotion to strengthen my position.`,
+    balanced: `${pieceNames[promotionPiece]} is the most principled promotion choice.`
+  };
+  
+  return messages[player.personality];
 };
 
 const generatePersonalityAnalysis = (
