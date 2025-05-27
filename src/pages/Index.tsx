@@ -21,7 +21,7 @@ const Index = () => {
   const [opponent2Type, setOpponent2Type] = useState<OpponentType>('gpt-4o');
 
   if (!user) {
-    return <AuthPage />;
+    return <AuthPage onBack={() => {}} />;
   }
 
   const handleGameModeSelect = (mode: GameMode) => {
@@ -55,14 +55,15 @@ const Index = () => {
   };
 
   const handleBackToMenu = () => {
-    setGameState('opponent-selection');
+    setGameState('menu');
   };
 
   switch (gameState) {
     case 'menu':
       return (
         <GameSetup 
-          onGameModeSelect={handleGameModeSelect}
+          onStartGame={handleGameModeSelect}
+          onBack={handleBackToMenu}
           onShowProfile={handleShowProfile}
         />
       );
@@ -80,8 +81,6 @@ const Index = () => {
         return (
           <AIvAIChessBoard 
             onEndGame={handleEndGame}
-            opponent1Type={opponent1Type}
-            opponent2Type={opponent2Type}
           />
         );
       }
@@ -103,7 +102,8 @@ const Index = () => {
     default:
       return (
         <GameSetup 
-          onGameModeSelect={handleGameModeSelect}
+          onStartGame={handleGameModeSelect}
+          onBack={handleBackToMenu}
           onShowProfile={handleShowProfile}
         />
       );
