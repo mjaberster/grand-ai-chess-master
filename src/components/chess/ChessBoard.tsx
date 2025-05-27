@@ -9,7 +9,7 @@ import ChatBox from './ChatBox';
 import MoveHistory from './MoveHistory';
 import { initializeBoard, isValidMove, makeMove } from '@/utils/chessLogic';
 import { getAIMove } from '@/utils/aiService';
-import { getOpenAIMove } from '@/utils/openaiService';
+import { getOpenAIMove } from '@/utils/openaiChessService';
 
 interface ChessBoardProps {
   gameMode: GameMode;
