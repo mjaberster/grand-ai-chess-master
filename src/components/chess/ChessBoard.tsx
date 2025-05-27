@@ -5,12 +5,21 @@ import { ArrowLeft, RotateCcw, Flag, Clock } from 'lucide-react';
 import { GameMode, ChessPiece, PieceColor, Move } from '@/types/chess';
 import ChessSquare from './ChessSquare';
 import GameInfo from './GameInfo';
+import ChatBox from './ChatBox';
 import { initializeBoard, isValidMove, makeMove } from '@/utils/chessLogic';
 import { getAIMove } from '@/utils/aiService';
+import { getOpenAIMove } from '@/utils/openaiService';
 
 interface ChessBoardProps {
   gameMode: GameMode;
   onEndGame: () => void;
+}
+
+interface ChatMessage {
+  id: string;
+  sender: 'human' | 'ai';
+  message: string;
+  timestamp: number;
 }
 
 const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
@@ -20,6 +29,8 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
   const [gameHistory, setGameHistory] = useState<Move[]>([]);
   const [isThinking, setIsThinking] = useState(false);
   const [gameTime, setGameTime] = useState(0);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [playerColor, setPlayerColor] = useState<PieceColor>('white');
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -29,15 +40,37 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
   }, []);
 
   useEffect(() => {
-    if (gameMode === 'ai-vs-ai' || (gameMode === 'human-vs-ai' && currentPlayer === 'black')) {
+    if (gameMode === 'ai-vs-ai' || (gameMode === 'human-vs-ai' && currentPlayer !== playerColor)) {
       handleAIMove();
     }
-  }, [currentPlayer, gameMode]);
+  }, [currentPlayer, gameMode, playerColor]);
 
   const handleAIMove = async () => {
     setIsThinking(true);
     try {
-      const aiMove = await getAIMove(board, currentPlayer, gameHistory);
+      let aiMove;
+      let chatMessage = '';
+
+      // Use OpenAI for human vs AI games
+      if (gameMode === 'human-vs-ai') {
+        const result = await getOpenAIMove(board, currentPlayer, gameHistory, 'Player');
+        aiMove = result.move;
+        chatMessage = result.chatMessage;
+        
+        if (chatMessage) {
+          const newChatMessage: ChatMessage = {
+            id: Date.now().toString(),
+            sender: 'ai',
+            message: chatMessage,
+            timestamp: Date.now()
+          };
+          setChatMessages(prev => [...prev, newChatMessage]);
+        }
+      } else {
+        // Use regular AI for AI vs AI games
+        aiMove = await getAIMove(board, currentPlayer, gameHistory);
+      }
+
       if (aiMove) {
         const newBoard = makeMove(board, aiMove.from, aiMove.to);
         setBoard(newBoard);
@@ -53,7 +86,7 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
 
   const handleSquareClick = (row: number, col: number) => {
     if (gameMode === 'ai-vs-ai') return;
-    if (gameMode === 'human-vs-ai' && currentPlayer === 'black') return;
+    if (gameMode === 'human-vs-ai' && currentPlayer !== playerColor) return;
 
     const position = `${String.fromCharCode(97 + col)}${8 - row}`;
     const piece = board[row][col];
@@ -93,6 +126,16 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
         setSelectedSquare(position);
       }
     }
+  };
+
+  const handleSendMessage = (message: string) => {
+    const newMessage: ChatMessage = {
+      id: Date.now().toString(),
+      sender: 'human',
+      message,
+      timestamp: Date.now()
+    };
+    setChatMessages(prev => [...prev, newMessage]);
   };
 
   const formatTime = (seconds: number) => {
@@ -161,70 +204,70 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
 
         <div className="grid lg:grid-cols-4 gap-6">
           {/* Chess Board */}
-          <div className="lg:col-span-3">
+          <div className="lg:col-span-2">
             <Card className="bg-slate-800/50 border-slate-700 backdrop-blur-sm p-6">
               <div className="max-w-2xl mx-auto">
-                {/* Board with coordinates */}
-                <div className="relative">
-                  {/* Top file labels (a-h) */}
-                  <div className="grid grid-cols-8 gap-0 mb-2 ml-8 mr-8">
+                {/* Board with properly aligned coordinates using CSS Grid */}
+                <div className="inline-block">
+                  {/* Main grid container: 10x10 (8x8 board + 2 for coordinates) */}
+                  <div className="grid grid-cols-10 grid-rows-10 gap-0 aspect-square border-4 border-amber-400 rounded-lg overflow-hidden">
+                    {/* Top-left corner (empty) */}
+                    <div className="flex items-center justify-center"></div>
+                    
+                    {/* Top file labels (a-h) */}
                     {files.map(file => (
-                      <div key={file} className="aspect-square flex items-center justify-center text-amber-300 font-bold text-lg">
+                      <div key={`top-${file}`} className="flex items-center justify-center text-amber-300 font-bold text-lg bg-slate-900/50">
                         {file}
                       </div>
                     ))}
-                  </div>
+                    
+                    {/* Top-right corner (empty) */}
+                    <div className="flex items-center justify-center"></div>
 
-                  <div className="flex items-center">
-                    {/* Left rank labels (8-1) */}
-                    <div className="flex flex-col mr-2">
-                      {ranks.map(rank => (
-                        <div key={rank} className="aspect-square w-8 flex items-center justify-center text-amber-300 font-bold text-lg">
-                          {rank}
-                        </div>
-                      ))}
-                    </div>
+                    {/* Board rows with left and right rank labels */}
+                    {board.map((row, rowIndex) => [
+                      // Left rank label
+                      <div key={`left-${ranks[rowIndex]}`} className="flex items-center justify-center text-amber-300 font-bold text-lg bg-slate-900/50">
+                        {ranks[rowIndex]}
+                      </div>,
+                      
+                      // Chess squares
+                      ...row.map((piece, colIndex) => {
+                        const position = `${String.fromCharCode(97 + colIndex)}${8 - rowIndex}`;
+                        const isLight = (rowIndex + colIndex) % 2 === 0;
+                        const isSelected = selectedSquare === position;
+                        
+                        return (
+                          <ChessSquare
+                            key={position}
+                            position={position}
+                            piece={piece}
+                            isLight={isLight}
+                            isSelected={isSelected}
+                            onClick={() => handleSquareClick(rowIndex, colIndex)}
+                            pieceSymbol={getPieceSymbol(piece)}
+                          />
+                        );
+                      }),
+                      
+                      // Right rank label
+                      <div key={`right-${ranks[rowIndex]}`} className="flex items-center justify-center text-amber-300 font-bold text-lg bg-slate-900/50">
+                        {ranks[rowIndex]}
+                      </div>
+                    ])}
 
-                    {/* Chess board */}
-                    <div className="grid grid-cols-8 gap-0 aspect-square border-4 border-amber-400 rounded-lg overflow-hidden">
-                      {board.map((row, rowIndex) =>
-                        row.map((piece, colIndex) => {
-                          const position = `${String.fromCharCode(97 + colIndex)}${8 - rowIndex}`;
-                          const isLight = (rowIndex + colIndex) % 2 === 0;
-                          const isSelected = selectedSquare === position;
-                          
-                          return (
-                            <ChessSquare
-                              key={position}
-                              position={position}
-                              piece={piece}
-                              isLight={isLight}
-                              isSelected={isSelected}
-                              onClick={() => handleSquareClick(rowIndex, colIndex)}
-                              pieceSymbol={getPieceSymbol(piece)}
-                            />
-                          );
-                        })
-                      )}
-                    </div>
-
-                    {/* Right rank labels (8-1) */}
-                    <div className="flex flex-col ml-2">
-                      {ranks.map(rank => (
-                        <div key={rank} className="aspect-square w-8 flex items-center justify-center text-amber-300 font-bold text-lg">
-                          {rank}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Bottom file labels (a-h) */}
-                  <div className="grid grid-cols-8 gap-0 mt-2 ml-8 mr-8">
+                    {/* Bottom-left corner (empty) */}
+                    <div className="flex items-center justify-center"></div>
+                    
+                    {/* Bottom file labels (a-h) */}
                     {files.map(file => (
-                      <div key={file} className="aspect-square flex items-center justify-center text-amber-300 font-bold text-lg">
+                      <div key={`bottom-${file}`} className="flex items-center justify-center text-amber-300 font-bold text-lg bg-slate-900/50">
                         {file}
                       </div>
                     ))}
+                    
+                    {/* Bottom-right corner (empty) */}
+                    <div className="flex items-center justify-center"></div>
                   </div>
                 </div>
               </div>
@@ -245,14 +288,21 @@ const ChessBoard = ({ gameMode, onEndGame }: ChessBoardProps) => {
             </Card>
           </div>
 
-          {/* Game Info */}
-          <div className="lg:col-span-1">
+          {/* Game Info and Chat */}
+          <div className="lg:col-span-2 space-y-6">
             <GameInfo 
               gameMode={gameMode}
               currentPlayer={currentPlayer}
               gameHistory={gameHistory}
               isThinking={isThinking}
             />
+            
+            {gameMode === 'human-vs-ai' && (
+              <ChatBox 
+                messages={chatMessages}
+                onSendMessage={handleSendMessage}
+              />
+            )}
           </div>
         </div>
       </div>
