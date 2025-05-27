@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Trophy, User, Crown, Zap } from 'lucide-react';
 import ChessBoard from '@/components/chess/ChessBoard';
+import AIvAIChessBoard from '@/components/chess/AIvAIChessBoard';
 import GameSetup from '@/components/chess/GameSetup';
 import UserProfile from '@/components/chess/UserProfile';
 import { GameMode, GameState } from '@/types/chess';
@@ -44,6 +45,14 @@ const Index = () => {
   }
 
   if (gameState === 'playing' && gameMode) {
+    if (gameMode === 'ai-vs-ai') {
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+          <AIvAIChessBoard onEndGame={handleEndGame} />
+        </div>
+      );
+    }
+    
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
         <ChessBoard 
