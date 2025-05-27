@@ -1,18 +1,18 @@
-
 import { useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Bot, User } from 'lucide-react';
+import { ArrowLeft, Bot, User, UserCircle } from 'lucide-react';
 import { GameMode, AIModel, PieceColor } from '@/types/chess';
 
 interface GameSetupProps {
   onStartGame: (mode: GameMode) => void;
   onBack: () => void;
+  onShowProfile: () => void;
 }
 
-const GameSetup = ({ onStartGame, onBack }: GameSetupProps) => {
+const GameSetup = ({ onStartGame, onBack, onShowProfile }: GameSetupProps) => {
   const [selectedModel, setSelectedModel] = useState<AIModel>('gpt-4o');
   const [playerColor, setPlayerColor] = useState<PieceColor>('white');
 
@@ -20,15 +20,24 @@ const GameSetup = ({ onStartGame, onBack }: GameSetupProps) => {
     <div className="min-h-screen flex items-center justify-center p-4">
       <Card className="bg-slate-800/50 border-slate-700 backdrop-blur-sm w-full max-w-2xl">
         <div className="p-8">
-          <div className="flex items-center mb-8">
-            <Button 
-              onClick={onBack}
-              variant="ghost" 
-              className="mr-4 text-slate-300 hover:bg-slate-700"
+          <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center">
+              <Button 
+                onClick={onBack}
+                variant="ghost" 
+                className="mr-4 text-slate-300 hover:bg-slate-700"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </Button>
+              <h2 className="text-3xl font-bold text-white">Game Setup</h2>
+            </div>
+            <Button
+              onClick={onShowProfile}
+              variant="ghost"
+              className="text-slate-300 hover:bg-slate-700"
             >
-              <ArrowLeft className="w-4 h-4" />
+              <UserCircle className="w-5 h-5" />
             </Button>
-            <h2 className="text-3xl font-bold text-white">Game Setup</h2>
           </div>
 
           <div className="space-y-8">
