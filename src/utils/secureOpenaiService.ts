@@ -71,28 +71,15 @@ const getApiKey = async (): Promise<string | null> => {
   try {
     const { data: { user } } = await supabase.auth.getUser();
     
-    if (user) {
-      const { data, error } = await supabase
-        .from('user_api_keys')
-        .select('api_key_encrypted')
-        .eq('user_id', user.id)
-        .maybeSingle();
-      
-      if (error) throw error;
-      
-      if (data?.api_key_encrypted === 'MASTER_KEY_ACCESS') {
-        return 'MASTER_KEY_ACCESS';
-      }
-      
-      return data ? atob(data.api_key_encrypted) : null;
-    } else {
-      // Anonymous user
-      const storedKey = localStorage.getItem('chess_api_key_session');
-      if (storedKey === 'MASTER_KEY_ACCESS') {
-        return 'MASTER_KEY_ACCESS';
-      }
-      return storedKey ? atob(storedKey) : null;
+    // Use localStorage for API key storage
+    const storageKey = user ? `chess_api_key_${user.id}` : 'chess_api_key_session';
+    const storedKey = localStorage.getItem(storageKey);
+    
+    if (storedKey === 'MASTER_KEY_ACCESS') {
+      return 'MASTER_KEY_ACCESS';
     }
+    
+    return storedKey ? atob(storedKey) : null;
   } catch (error) {
     console.error('Error retrieving API key:', error);
     return null;
