@@ -21,11 +21,6 @@ const Index = () => {
   const [opponent1Type, setOpponent1Type] = useState<OpponentType>('human');
   const [opponent2Type, setOpponent2Type] = useState<OpponentType>('gpt-4o');
 
-  // If user is not logged in, show auth page
-  if (!user) {
-    return <AuthPage onBack={() => setGameState('home')} />;
-  }
-
   const handleStartGame = () => {
     setGameState('game-setup');
   };
@@ -53,7 +48,15 @@ const Index = () => {
   };
 
   const handleShowProfile = () => {
+    if (!user) {
+      setGameState('auth');
+      return;
+    }
     setGameState('profile');
+  };
+
+  const handleShowAuth = () => {
+    setGameState('auth');
   };
 
   const handleBackToHome = () => {
@@ -70,7 +73,13 @@ const Index = () => {
         <Home 
           onStartGame={handleStartGame}
           onShowProfile={handleShowProfile}
+          onShowAuth={handleShowAuth}
         />
+      );
+    
+    case 'auth':
+      return (
+        <AuthPage onBack={handleBackToHome} />
       );
     
     case 'game-setup':
@@ -118,6 +127,7 @@ const Index = () => {
         <Home 
           onStartGame={handleStartGame}
           onShowProfile={handleShowProfile}
+          onShowAuth={handleShowAuth}
         />
       );
   }

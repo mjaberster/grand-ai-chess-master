@@ -2,14 +2,15 @@
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { useAuth } from '@/hooks/useAuth';
-import { Crown, Play, User, LogOut, Trophy, Clock } from 'lucide-react';
+import { Crown, Play, User, LogOut, Trophy, Clock, LogIn } from 'lucide-react';
 
 interface HomeProps {
   onStartGame: () => void;
   onShowProfile: () => void;
+  onShowAuth: () => void;
 }
 
-const Home = ({ onStartGame, onShowProfile }: HomeProps) => {
+const Home = ({ onStartGame, onShowProfile, onShowAuth }: HomeProps) => {
   const { user, signOut } = useAuth();
 
   const handleSignOut = async () => {
@@ -26,23 +27,36 @@ const Home = ({ onStartGame, onShowProfile }: HomeProps) => {
             <h1 className="text-2xl font-bold text-white">AI Chess Arena</h1>
           </div>
           <div className="flex items-center space-x-4">
-            <span className="text-slate-300">Welcome, {user?.email?.split('@')[0]}</span>
-            <Button
-              onClick={onShowProfile}
-              variant="ghost"
-              className="text-slate-300 hover:bg-slate-700"
-            >
-              <User className="w-4 h-4 mr-2" />
-              Profile
-            </Button>
-            <Button
-              onClick={handleSignOut}
-              variant="ghost"
-              className="text-slate-300 hover:bg-slate-700"
-            >
-              <LogOut className="w-4 h-4 mr-2" />
-              Logout
-            </Button>
+            {user ? (
+              <>
+                <span className="text-slate-300">Welcome, {user?.email?.split('@')[0]}</span>
+                <Button
+                  onClick={onShowProfile}
+                  variant="ghost"
+                  className="text-slate-300 hover:bg-slate-700"
+                >
+                  <User className="w-4 h-4 mr-2" />
+                  Profile
+                </Button>
+                <Button
+                  onClick={handleSignOut}
+                  variant="ghost"
+                  className="text-slate-300 hover:bg-slate-700"
+                >
+                  <LogOut className="w-4 h-4 mr-2" />
+                  Logout
+                </Button>
+              </>
+            ) : (
+              <Button
+                onClick={onShowAuth}
+                variant="ghost"
+                className="text-slate-300 hover:bg-slate-700"
+              >
+                <LogIn className="w-4 h-4 mr-2" />
+                Login
+              </Button>
+            )}
           </div>
         </div>
       </header>
@@ -55,6 +69,7 @@ const Home = ({ onStartGame, onShowProfile }: HomeProps) => {
           </h2>
           <p className="text-xl text-slate-300 max-w-2xl mx-auto">
             Test your chess skills against advanced AI opponents or watch epic AI battles unfold.
+            {!user && " Create an account to save your progress and track your games."}
           </p>
         </div>
 
@@ -85,14 +100,14 @@ const Home = ({ onStartGame, onShowProfile }: HomeProps) => {
               </div>
               <h3 className="text-xl font-semibold text-white mb-2">Your Profile</h3>
               <p className="text-slate-300 mb-4">
-                View stats and manage your account
+                {user ? "View stats and manage your account" : "Login to track your progress"}
               </p>
               <Button 
-                onClick={onShowProfile}
+                onClick={user ? onShowProfile : onShowAuth}
                 variant="outline"
                 className="w-full border-slate-600 text-slate-300 hover:bg-slate-700"
               >
-                View Profile
+                {user ? "View Profile" : "Login"}
               </Button>
             </div>
           </Card>
@@ -124,7 +139,11 @@ const Home = ({ onStartGame, onShowProfile }: HomeProps) => {
             Recent Activity
           </h3>
           <div className="text-center py-8">
-            <p className="text-slate-400">No games played yet. Start your first game!</p>
+            {user ? (
+              <p className="text-slate-400">No games played yet. Start your first game!</p>
+            ) : (
+              <p className="text-slate-400">Login to track your game history and progress.</p>
+            )}
           </div>
         </Card>
       </div>
