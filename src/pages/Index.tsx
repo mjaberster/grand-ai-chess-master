@@ -1,4 +1,3 @@
-
 import { useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import AuthPage from '@/components/auth/AuthPage';
@@ -16,13 +15,17 @@ type OpponentType = 'human' | 'gpt-4o' | 'claude' | 'gemini';
 const Index = () => {
   const { user } = useAuth();
   const [gameState, setGameState] = useState<GameState>('home');
-  const [gameMode, setGameMode] = useState<GameMode>('human-vs-ai');
+  const [gameMode, setGameMode] = useState<GameMode>('ai-vs-ai');
   const [playerColor, setPlayerColor] = useState<PieceColor>('white');
-  const [opponent1Type, setOpponent1Type] = useState<OpponentType>('human');
+  const [opponent1Type, setOpponent1Type] = useState<OpponentType>('gpt-4o');
   const [opponent2Type, setOpponent2Type] = useState<OpponentType>('gpt-4o');
 
   const handleStartGame = () => {
-    setGameState('game-setup');
+    // Directly start AI vs AI game with GPT-4o opponents
+    setGameMode('ai-vs-ai');
+    setOpponent1Type('gpt-4o');
+    setOpponent2Type('gpt-4o');
+    setGameState('playing');
   };
 
   const handleGameModeSelect = (mode: GameMode) => {
@@ -100,20 +103,9 @@ const Index = () => {
       );
     
     case 'playing':
-      if (gameMode === 'ai-vs-ai') {
-        return (
-          <AIvAIChessBoard 
-            onEndGame={handleEndGame}
-          />
-        );
-      }
       return (
-        <ChessBoard 
-          gameMode={gameMode}
+        <AIvAIChessBoard 
           onEndGame={handleEndGame}
-          opponent1Type={opponent1Type}
-          opponent2Type={opponent2Type}
-          playerColor={playerColor}
         />
       );
     
